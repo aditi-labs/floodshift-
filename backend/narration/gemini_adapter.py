@@ -57,9 +57,20 @@ def compact_result(value):
     return value
 
 
+def api_failure_reason(error):
+    """Return useful diagnostics without exposing transport messages or secrets."""
+    if isinstance(error, TimeoutError) or type(error).__name__ in {
+            'ReadTimeout', 'ConnectTimeout', 'WriteTimeout', 'PoolTimeout'}:
+        return 'api_timeout'
+    return {400: 'api_bad_request', 401: 'api_authentication_failed',
+            403: 'api_permission_denied', 404: 'api_model_not_found',
+            429: 'api_quota_exceeded', 500: 'api_server_error',
+            503: 'api_unavailable'}.get(getattr(error, 'code', None), 'api_error')
+
+
 class GeminiNarrator:
-    def __init__(self, *, client=None, model=None, enabled=True, max_rounds=3, max_tool_calls=8,
-                 timeout_ms=2500):
+    def __init__(self, *, client=None, model=None, api_key=None, enabled=True, max_rounds=3, max_tool_calls=8,
+                 timeout_ms=2500, require_tool_call=False):
         if not 1 <= max_rounds <= 4 or not 1 <= max_tool_calls <= 12 or not 1 <= timeout_ms <= 10000:
             raise ValueError('invalid_narration_limits')
         self.client = client
@@ -68,6 +79,8 @@ class GeminiNarrator:
         self.max_rounds = max_rounds
         self.max_tool_calls = max_tool_calls
         self.timeout_ms = timeout_ms
+        self._api_key = api_key
+        self.require_tool_call = require_tool_call
 
     @staticmethod
     def _fallback(service, reason):
@@ -83,7 +96,7 @@ class GeminiNarrator:
             return self._fallback(service, 'disabled')
         client, owned = self.client, False
         if client is None:
-            api_key = os.environ.get('GEMINI_API_KEY') or os.environ.get('GOOGLE_API_KEY')
+            api_key = self._api_key or os.environ.get('GEMINI_API_KEY') or os.environ.get('GOOGLE_API_KEY')
             if not api_key:
                 return self._fallback(service, 'missing_api_key')
             try:
@@ -113,12 +126,17 @@ class GeminiNarrator:
         used = []
         try:
             for _ in range(self.max_rounds):
-                response = client.models.generate_content(model=self.model, contents=contents, config=config)
+                round_config = dict(config)
+                if self.require_tool_call:
+                    round_config['tool_config'] = {'function_calling_config': {'mode': 'AUTO' if used else 'ANY'}}
+                response = client.models.generate_content(model=self.model, contents=contents, config=round_config)
                 candidates = getattr(response, 'candidates', None)
                 content = candidates[0].content if candidates else None
                 parts = getattr(content, 'parts', None) or []
                 calls = [p.function_call for p in parts if getattr(p, 'function_call', None)]
                 if not calls:
+                    if self.require_tool_call and not used:
+                        return self._fallback(service, 'tool_call_missing')
                     text = getattr(response, 'text', None)
                     if not isinstance(text, str) or not text.strip():
                         return self._fallback(service, 'empty_response')
@@ -151,9 +169,9 @@ class GeminiNarrator:
                 # Preserve the whole model turn, including any thought signatures.
                 contents.extend([content, {'role': 'tool', 'parts': replies}])
             return self._fallback(service, 'round_limit')
-        except Exception:
+        except Exception as error:
             # Never echo SDK exception text: it may contain transport or key data.
-            return self._fallback(service, 'api_error')
+            return self._fallback(service, api_failure_reason(error))
         finally:
             if owned:
                 try:

@@ -76,7 +76,7 @@ def test_model_cannot_mutate_world_or_call_unapproved_tools(name, args, reason):
 
 
 @pytest.mark.parametrize('reply,reason', [
-    (TimeoutError('secret-key-must-not-leak'), 'api_error'),
+    (TimeoutError('secret-key-must-not-leak'), 'api_timeout'),
     (response(text=''), 'empty_response'),
     (response(text='word ' * 91), 'response_too_long'),
 ])
@@ -136,8 +136,10 @@ def test_real_google_sdk_function_call_wire_format_without_network():
                                                         'finishReason': 'STOP'}]})
     with httpx.Client(transport=httpx.MockTransport(handle)) as transport:
         with genai.Client(api_key='test-key-not-real', http_options={'httpx_client': transport}) as client:
-            result = GeminiNarrator(client=client).answer(staged_world(), 'Explain unmet needs')
+            result = GeminiNarrator(client=client, require_tool_call=True).answer(staged_world(), 'Explain unmet needs')
     assert result['mode'] == 'LIVE' and len(requests) == 2
+    assert requests[0]['toolConfig']['functionCallingConfig']['mode'] == 'ANY'
+    assert requests[1]['toolConfig']['functionCallingConfig']['mode'] == 'AUTO'
     declarations = requests[0]['tools'][0]['functionDeclarations']
     assert {d['name'] for d in declarations} == set(TOOL_ARGUMENTS)
     reply = requests[1]['contents'][-1]['parts'][0]['functionResponse']

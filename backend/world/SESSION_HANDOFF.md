@@ -90,6 +90,12 @@ has been claimed by the mock/transport tests.
 
 ## Validation and remaining work
 
+See [Gemini setup and live acceptance check](../narration/GEMINI_SETUP.md) for
+the ignored local key file and bounded three-question smoke runner. The live
+runner requires a successful read-only tool call for each answer and fails if
+any answer falls back to TEXT. Authentication, quota, model and timeout failures
+have separate sanitized reason codes; no API exception text is returned.
+
 ```sh
 python -m pytest tests/test_world_*.py
 ```
