@@ -1,0 +1,47 @@
+{
+  "catalog_version": 2,
+  "tokens": {
+    "hospital": {
+      "display_name": "Hospital / Field Care",
+      "icon": "medical-cross",
+      "perceptron_hint": "miniature building with medical cross",
+      "valid_site_kinds": ["medical_site"],
+      "effect": "activate_field_care"
+    },
+    "shelter": {
+      "display_name": "Emergency Shelter",
+      "icon": "tent",
+      "perceptron_hint": "miniature sleeping refuge tent",
+      "valid_site_kinds": ["shelter_site"],
+      "effect": "deploy_shelter"
+    },
+    "food_shelter": {
+      "display_name": "Food & Water Station",
+      "icon": "bowl",
+      "perceptron_hint": "miniature aid distribution canopy with food symbol",
+      "valid_site_kinds": ["food_site"],
+      "effect": "deploy_food_station"
+    },
+    "bridge": {
+      "display_name": "Temporary Bridge",
+      "icon": "bridge",
+      "perceptron_hint": "miniature bridge span across river",
+      "valid_site_kinds": ["bridge_crossing"],
+      "effect": "deploy_bridge"
+    },
+    "disaster_start": {
+      "display_name": "START DISASTER",
+      "icon": "storm",
+      "perceptron_hint": "miniature orange storm warning button or token",
+      "valid_site_kinds": ["control_start_pad"],
+      "effect": "start_disaster"
+    },
+    "person": {
+      "display_name": "People / Household",
+      "icon": "person",
+      "perceptron_hint": "miniature human figurine with circular base",
+      "valid_site_kinds": ["population_node"],
+      "effect": "place_people"
+    }
+  }
+}

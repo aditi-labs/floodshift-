@@ -1,0 +1,37 @@
+{
+  "schema_version": 2,
+  "world_version": 1,
+  "scenario_id": "nepal_rasuwa_v1",
+  "phase": "ready",
+  "simulation_stage": 0,
+  "branch_id": "main",
+  "token_inventory": {
+    "hospital": 1,
+    "shelter": 1,
+    "food_shelter": 1,
+    "bridge": 1,
+    "person": 2,
+    "disaster_start": 1
+  },
+  "tokens": [],
+  "facilities": [],
+  "population_demand": [],
+  "edges": [
+    {"id": "depot_to_west", "blocked": false, "reason": null},
+    {"id": "west_to_crossing", "blocked": false, "reason": null},
+    {"id": "crossing_east", "blocked": true, "reason": "damaged_bridge"},
+    {"id": "crossing_to_village", "blocked": false, "reason": null}
+  ],
+  "metrics": {
+    "people_reachable_for_medical": 0,
+    "people_reachable_for_food": 0,
+    "people_reachable_for_shelter": 0,
+    "unmet_food_model": 0,
+    "unmet_medical_model": 0,
+    "unmet_refuge_model": 0,
+    "blocked_roads": 1
+  },
+  "ghost_suggestion": null,
+  "narration_event": null,
+  "provenance_label": "Historical map data; intervention outcomes are illustrative"
+}
