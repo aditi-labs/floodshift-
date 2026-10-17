@@ -1,11 +1,59 @@
 {
   "catalog_version": 2,
   "tokens": {
-    "hospital": {"display_name":"Hospital / Field Care", "icon":"medical-cross", "perceptron_hint":"top view of a cross-shaped base with a flat central square pad and a raised medical plus sign on one outer arm", "valid_site_kinds":["medical_site"], "effect":"activate_field_care"},
-    "shelter": {"display_name":"Emergency Shelter", "icon":"tent", "perceptron_hint":"top view of a house-shaped pentagonal base with a pointed end, a flat central square pad, and two raised parallel ridge bars near the pointed end", "valid_site_kinds":["shelter_site"], "effect":"deploy_shelter"},
-    "food_shelter": {"display_name":"Food & Water Station", "icon":"bowl", "perceptron_hint":"top view of a chamfered rectangular base with a flat central square pad, four round corner posts, and a small raised hollow bowl ring along one edge", "valid_site_kinds":["food_site"], "effect":"deploy_food_station"},
-    "bridge": {"display_name":"Temporary Bridge", "icon":"bridge", "perceptron_hint":"top view of a long narrow bridge deck with flared approach tabs near both ends, a flat central square pad, and four raised rectangular rail posts near the ends", "valid_site_kinds":["bridge_crossing"], "effect":"deploy_bridge"},
-    "disaster_start": {"display_name":"START DISASTER", "icon":"storm", "perceptron_hint":"top view of an octagonal base with a flat central square pad and four raised rectangular alert rays at the top, bottom, left, and right edges", "valid_site_kinds":["control_start_pad"], "effect":"start_disaster"},
-    "person": {"display_name":"People / Household", "icon":"person", "perceptron_hint":"top view of a flat square central pad framed by a round head above, two angled rectangular arms at the sides, and two separated rectangular legs below", "valid_site_kinds":["population_node"], "effect":"place_people"}
+    "hospital": {
+      "display_name": "Hospital / Field Care",
+      "icon": "medical-cross",
+      "perceptron_hint": "top view of a cross-shaped base with a flat central square pad and a raised medical plus sign on one outer arm",
+      "valid_site_kinds": [
+        "medical_site"
+      ],
+      "effect": "activate_field_care"
+    },
+    "shelter": {
+      "display_name": "Emergency Shelter",
+      "icon": "tent",
+      "perceptron_hint": "top view of a house-shaped pentagonal base with a pointed end, a flat central square pad, and two raised parallel ridge bars near the pointed end",
+      "valid_site_kinds": [
+        "shelter_site"
+      ],
+      "effect": "deploy_shelter"
+    },
+    "food_shelter": {
+      "display_name": "Food & Water Station",
+      "icon": "bowl",
+      "perceptron_hint": "top view of a chamfered rectangular base with a flat central square pad, four round corner posts, and a small raised hollow bowl ring along one edge",
+      "valid_site_kinds": [
+        "food_site"
+      ],
+      "effect": "deploy_food_station"
+    },
+    "bridge": {
+      "display_name": "Temporary Bridge",
+      "icon": "bridge",
+      "perceptron_hint": "top view of a long narrow bridge deck with flared approach tabs near both ends, a flat central square pad, and four raised rectangular rail posts near the ends",
+      "valid_site_kinds": [
+        "bridge_crossing"
+      ],
+      "effect": "deploy_bridge"
+    },
+    "disaster_start": {
+      "display_name": "START DISASTER",
+      "icon": "storm",
+      "perceptron_hint": "top view of an octagonal base with a flat central square pad and four raised rectangular alert rays at the top, bottom, left, and right edges",
+      "valid_site_kinds": [
+        "control_start_pad"
+      ],
+      "effect": "start_disaster"
+    },
+    "person": {
+      "display_name": "People / Household",
+      "icon": "person",
+      "perceptron_hint": "top view of a flat square central pad framed by a round head above, two angled rectangular arms at the sides, and two separated rectangular legs below",
+      "valid_site_kinds": [
+        "population_node"
+      ],
+      "effect": "place_people"
+    }
   }
 }
