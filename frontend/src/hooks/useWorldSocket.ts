@@ -95,8 +95,8 @@ export function useWorldSocket() {
         push("accepted", `${label} → world ${r.world_version}`);
         if (uv) flash("accepted", uv, "✓");
       } else {
-        push("rejected", `${label} rejected: ${r.reason}`);
-        if (uv) flash("rejected", uv, reasonText(r.reason));
+        push("rejected", `${label} rejected: ${r.rejection_reason}`);
+        if (uv) flash("rejected", uv, reasonText(r.rejection_reason));
       }
       return r;
     },
@@ -199,6 +199,7 @@ const REASONS: Record<string, string> = {
   start_first: "PLACE START FIRST",
   stale_version: "WORLD CHANGED — TRY AGAIN",
   duplicate: "ALREADY APPLIED",
+  no_suggestion: "NO BRIDGE NEEDED",
   no_supply_route: "NO SUPPLY ROUTE",
   site_in_hazard: "SITE IN HAZARD ZONE",
 };

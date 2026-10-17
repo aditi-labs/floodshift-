@@ -1,6 +1,5 @@
-// Mirror of the frozen shared contracts in docs/MASTER.md §06 (schema_version 2).
-// Authoritative schemas live in backend/contracts.py (P3 + P4). If a field changes
-// there, change it here in the same PR and bump SCHEMA_VERSION.
+// Mirror of backend/contracts.py (P3, schema_version 2) — that file is authoritative.
+// If a field changes there, change it here in the same PR and bump SCHEMA_VERSION.
 //
 // Fields marked `PROPOSED (P2)` are not yet in the master spec's snapshot example;
 // they are optional so the UI still renders a snapshot that omits them. See the
@@ -41,21 +40,23 @@ export type Phase = "ready" | "disaster_active";
 export type UV = [number, number];
 
 export type VisionSource = "perceptron" | "replay" | "manual";
-export type TokenStatus = "accepted" | "unconfirmed" | "rejected";
+export type TokenStatus = "accepted" | "pending" | "rejected";
 
+/** backend TokenState. With markerless tracking (spec §07b) ids look like "tracked-<n>". */
 export interface PlacedToken {
   id: string;
   type: TokenType;
   board_uv: UV;
-  site_id: string | null;
+  site_id?: string | null;
   vision_source: VisionSource;
   status: TokenStatus;
   rotation_deg?: number;
 }
 
+/** backend FacilityState */
 export interface Facility {
   id: string;
-  type: "hospital" | "food_shelter" | "shelter";
+  type: TokenType;
   capacity_model: number;
   used_capacity_model: number;
   reachable: boolean;
@@ -75,9 +76,10 @@ export interface PopulationDemand {
 export interface EdgeState {
   id: string;
   blocked: boolean;
-  reason: string | null;
+  reason?: string | null;
 }
 
+/** backend WorldMetrics */
 export interface Metrics {
   people_reachable_for_medical: number;
   people_reachable_for_food: number;
@@ -126,8 +128,8 @@ export interface WorldSnapshot {
   population_demand: PopulationDemand[];
   edges: EdgeState[];
   metrics: Metrics;
-  ghost_suggestion: GhostSuggestion | null;
-  narration_event: NarrationEvent | null;
+  ghost_suggestion?: GhostSuggestion | null;
+  narration_event?: NarrationEvent | null;
   provenance_label: string;
   /** PROPOSED (P2) */
   service_routes?: ServiceRoute[];
@@ -154,18 +156,39 @@ export interface WorldAction {
   site_id?: string | null;
   board_uv?: UV | null;
   expected_world_version: number;
-  timestamp_utc: string;
+  timestamp_utc?: string;
 }
 
 /** Response of POST /action. Rejections are rendered, never computed, by the UI. */
 export interface ActionResult {
-  action_id: string;
   accepted: boolean;
-  reason?: string | null;
+  action_id: string;
+  world_version: number;
+  rejection_reason?: string | null;
+}
+
+/** Response of POST /plan/suggest (backend/main.py). */
+export interface SuggestResponse {
+  has_suggestion: boolean;
+  suggestion: GhostSuggestion | null;
   world_version: number;
 }
 
-export type VisionStatus = "confirmed" | "unconfirmed" | "unavailable" | "scanning";
+/** Response of POST /narrate. */
+export interface NarrateResponse {
+  answer: string;
+  grounded_in_version: number;
+}
+
+export interface HealthResponse {
+  status: string;
+  world_version?: number | null;
+  vision_mode: string;
+  perceptron_status: string;
+  gemini_status: string;
+}
+
+export type VisionStatus = "pending" | "confirmed" | "rejected" | "unavailable";
 
 export interface ObjectObservation {
   event_type: "object_observed";
@@ -174,7 +197,7 @@ export interface ObjectObservation {
   token_id: string;
   object_type: TokenType;
   class_source: VisionSource;
-  perceptron_box_1000?: [number, number, number, number];
+  perceptron_box_1000?: [number, number, number, number] | null;
   board_uv: UV;
   rotation_deg?: number;
   stable_ms?: number;

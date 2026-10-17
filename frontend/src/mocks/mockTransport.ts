@@ -41,7 +41,7 @@ export function createMockTransport(): WorldTransport {
 
   function reject(action_id: string, reason: string): ActionResult {
     emit({ type: "warning", payload: { code: reason, message: `Rejected: ${reason}` } });
-    return { action_id, accepted: false, reason, world_version: current.world_version };
+    return { action_id, accepted: false, rejection_reason: reason, world_version: current.world_version };
   }
 
   /** Pure function of (state, action) so every tab reaches the same result. */

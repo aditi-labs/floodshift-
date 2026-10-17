@@ -1,0 +1,80 @@
+[
+  {
+    "action_id": "demo-0",
+    "type": "place_token",
+    "token_type": "disaster_start",
+    "token_id": "disaster_start",
+    "site_id": "start_pad",
+    "board_uv": [
+      0.08,
+      0.9
+    ],
+    "source": "manual",
+    "expected_world_version": 0
+  },
+  {
+    "action_id": "demo-1",
+    "type": "place_token",
+    "token_type": "person",
+    "token_id": "person",
+    "site_id": "people_east",
+    "board_uv": [
+      0.75,
+      0.4
+    ],
+    "source": "manual",
+    "expected_world_version": 1
+  },
+  {
+    "action_id": "demo-2",
+    "type": "place_token",
+    "token_type": "hospital",
+    "token_id": "hospital",
+    "site_id": "medical_site_west",
+    "board_uv": [
+      0.2,
+      0.25
+    ],
+    "source": "manual",
+    "expected_world_version": 2
+  },
+  {
+    "action_id": "demo-3",
+    "type": "place_token",
+    "token_type": "food_shelter",
+    "token_id": "food_shelter",
+    "site_id": "food_site_west",
+    "board_uv": [
+      0.2,
+      0.6
+    ],
+    "source": "manual",
+    "expected_world_version": 3
+  },
+  {
+    "action_id": "demo-4",
+    "type": "place_token",
+    "token_type": "shelter",
+    "token_id": "shelter",
+    "site_id": "shelter_site_west",
+    "board_uv": [
+      0.35,
+      0.75
+    ],
+    "source": "manual",
+    "expected_world_version": 4
+  },
+  {
+    "action_id": "demo-5",
+    "type": "place_token",
+    "token_type": "bridge",
+    "token_id": "bridge",
+    "site_id": "crossing_east",
+    "board_uv": [
+      0.475,
+      0.5
+    ],
+    "source": "manual",
+    "expected_world_version": 5
+  }
+]

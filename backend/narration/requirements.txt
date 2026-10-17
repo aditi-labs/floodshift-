@@ -1,0 +1,2 @@
+# Optional: the simulator and TEXT fallback do not require the Gemini SDK.
+google-genai>=1,<3

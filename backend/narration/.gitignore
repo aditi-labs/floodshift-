@@ -1,0 +1,4 @@
+# Local credentials and live smoke-test output; never commit these.
+gemini.env
+*.local
+live_smoke_report.json
