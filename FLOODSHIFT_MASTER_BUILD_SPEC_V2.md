@@ -146,14 +146,14 @@ A stranger should be able to:
 |---|---|---|---|---|
 | **Person 1 — Maker, Source Pack, Demo QA** | Buy/borrow hardware, 3D print **six pieces**, print map; maintain approved assets, source notes and action fixtures | Light (10–15%) | `hardware/**`, `assets/**`, `docs/DEMO_SCRIPT.md`, `docs/ATTRIBUTION.md`, `scenarios/**/visual_assets/`, `tests/fixtures/physical_token_manifest.json` | Six token definitions + placeholders/photos + legible printed map PDF or SVG; mocked token event list runs through the demo |
 | **Person 2 — UI/UX & Projection** | Design and implement the **operator screen and projector display**, transitions, ghost overlays, status panels, demo interactions; optionally front-end Gemini voice controls | Intensive (30%) | `frontend/**` (except generated API types), `assets/animations/**` | `npm run dev` renders full three-minute playthrough from `WorldSnapshot` fixture, keyboard/mouse fallback and scripted mock WebSocket |
-| **Person 3 — Physical AI & Integration API** | **Perceptron** semantic detection (core), OpenCV markers/camera/projector calibration, observation fusion, API/WebSocket gateway and action dispatch | Intensive (30%) | `backend/perception/**`, `backend/calibration/**`, `backend/main.py`, `backend/contracts.py`, `backend/api/**` | Recorded/static image → model bbox/class + simulated ArUco poses → validated `ObjectObservation`; mock POST action broadcasts a snapshot |
+| **Person 3 — Physical AI & Integration API** | **Perceptron** semantic detection (core), **markerless object tracking** (no QR codes!), camera/projector calibration, observation fusion, API/WebSocket gateway and action dispatch | Intensive (30%) | `backend/perception/**`, `backend/calibration/**`, `backend/main.py`, `backend/contracts.py`, `backend/api/**` | Recorded/static image → model bbox/class + OpenCV CSRT tracking → validated `ObjectObservation`; mock POST action broadcasts a snapshot |
 | **Person 4 — Nepal Data, World Simulation & Planner** | HOT/HDX import, road graph, people/food/medical/shelter mechanics, event reducer, ghost-site search, branch comparison, Gemini read-only tool functions | Intensive (30%) | `scripts/geodata/**`, `backend/world/**`, `backend/simulation/**`, `backend/planning/**`, `backend/narration/**`, `scenarios/**/data/**`, `tests/test_world_*.py` | `pytest` confirms start event, six token mechanics, invalid placement, route reconnection and consistent metrics without camera/frontend |
 
 ### Extra work delegation that doesn't create a bottleneck
 
 - **P1**: assemble `token_catalog.json` (labels, symbolic colors, site restrictions), make six simple STL/model folders or license-cleared replacements, export the **print-ready aligned map**, create fixture `demo_actions.json`, attribution/Devpost, record test photos. **No critical production backend code**.
 - **P2**: CSS/SVG/React; coordinate-aware projector overlay; dual-screen UI; operator controls; fake-socket test harness; optionally browser `speechSynthesis`, push-to-talk and Gemini frontend; never own road physics.
-- **P3**: detector and camera controls, projector calibration utility, FastAPI routes and sockets, map ID / START token gating, vision fusion; never own final UX styling or modify world physics.
+- **P3**: **markerless object tracking** (OpenCV CSRT), Perceptron semantic detection, camera controls, projector calibration utility, FastAPI routes and sockets, map ID / START token gating, vision fusion; never own final UX styling or modify world physics. **No QR codes needed on tokens!**
 - **P4**: all actual scenario transitions and rules, fixed historical scene bundle, eligible placement planner, metrics, snapshots; optional Gemini connector and Tiger writer **after** essential reducer passes.
 
 ### The exact dependency boundary (freeze within 20 minutes)
@@ -694,6 +694,133 @@ def recognize_board(frame_path: str, width: int, height: int) -> list[SemanticBo
 ### Optional P1: change detection (true multimodal perception)
 
 Use two images in one `perceive(...)` request with "What physical object was moved or introduced between before and after? Return grounded boxes". The documented DSL supports multiple assets/`asset_idx` and grounded annotations. This is a more persuasive sponsor demo than just asking "describe the map". Only attempt once the basic `detect` path is stable. [Perceptron SDK: multiple assets](https://github.com/perceptron-ai-inc/perceptron).
+
+---
+
+## 07b. MARKERLESS TRACKING — NO QR CODES NEEDED (Person 3 Implementation)
+
+> **Update v2.1:** Person 3 implemented Option 5: Markerless Tracking. This removes the need for ArUco/QR markers on tokens entirely, making the demo more impressive for judges.
+
+### Why markerless is better for the hackathon
+
+| Approach | Pros | Cons |
+|----------|------|------|
+| **ArUco markers on tokens** | Precise position, fast | QR codes look ugly, less impressive |
+| **Pure Perceptron every frame** | No markers | Too slow (1-2s), expensive, laggy |
+| **Markerless tracking (implemented)** | No markers, fast after ID, impressive | Slightly complex |
+
+### How markerless tracking works
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  STEP 1: Motion Detection                                       │
+│  Background subtraction detects when something NEW appears      │
+│  Output: "New object at bounding box (x, y, w, h)"             │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  STEP 2: OpenCV Tracker Initialization                          │
+│  CSRT tracker starts following the object at 30fps              │
+│  Output: Smooth position updates, no API calls                  │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  STEP 3: Stability Check (600ms)                                │
+│  Wait for object to stop moving                                 │
+│  Output: "Object stable, ready for identification"              │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  STEP 4: Perceptron Identification (ONE TIME ONLY)              │
+│  Call Perceptron API to identify what the object IS             │
+│  Output: "That's a BRIDGE" (cached for this track)              │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  STEP 5: Continuous Tracking                                    │
+│  OpenCV tracker follows object smoothly                         │
+│  Perceptron NOT called again unless object lost/replaced        │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Key files (Person 3 owns)
+
+| File | Purpose |
+|------|---------|
+| `backend/perception/tracker.py` | MarkerlessTracker class with OpenCV CSRT tracking |
+| `backend/perception/pipeline.py` | Main perception loop: camera → tracker → Perceptron → API |
+| `backend/perception/perceptron_adapter.py` | Perceptron SDK wrapper |
+
+### TrackerState enum
+
+```python
+class TrackerState(str, Enum):
+    DETECTING = "detecting"    # New object, waiting for Perceptron
+    TRACKING = "tracking"      # Identified, actively tracking
+    STABLE = "stable"          # Hasn't moved for 600ms, confirmed
+    LOST = "lost"              # Tracker lost the object
+```
+
+### Integration with World Service
+
+When an object becomes STABLE and has been identified:
+
+```python
+# Pipeline creates ObjectObservation
+observation = ObjectObservation(
+    token_id=f"tracked-{track_id}",      # NOT "fiducial-XX" anymore
+    object_type=TokenType.BRIDGE,         # From Perceptron
+    board_uv=(0.47, 0.61),                # From tracker + homography
+    class_source=VisionSource.PERCEPTRON,
+    vision_status=VisionStatus.CONFIRMED
+)
+
+# Then creates WorldAction
+action = WorldAction(
+    type=ActionType.PLACE_TOKEN,
+    source="physical_perceptron",
+    token_type=TokenType.BRIDGE,
+    board_uv=(0.47, 0.61),
+    expected_world_version=current_version
+)
+```
+
+### Benefits for hackathon demo
+
+1. **No ugly QR codes** — tokens look like real miniatures
+2. **Perceptron is essential** — without it, we can't identify anything
+3. **Fast and smooth** — 30fps tracking after initial identification
+4. **Cost-effective** — Perceptron called only once per object
+5. **Impressive to judges** — "The AI actually recognizes the physical shapes"
+
+### Fallback: ArUco markers still supported
+
+The original `backend/calibration/board.py` and `backend/perception/fusion.py` still work with ArUco markers. If markerless tracking fails under venue lighting, fall back to markers:
+
+```python
+# Use MarkerlessTracker (preferred)
+tracker = MarkerlessTracker()
+
+# OR use ArUco-based tracking (fallback)
+from backend.calibration.board import BoardCalibrator
+from backend.perception.fusion import VisionFusion
+calibrator = BoardCalibrator()
+fusion = VisionFusion()
+```
+
+### Testing markerless tracking
+
+```bash
+# Run tracker tests
+pytest tests/test_tracker.py -v
+
+# Test with mock camera
+python backend/perception/pipeline.py
+```
 
 ---
 
