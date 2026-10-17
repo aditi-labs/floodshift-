@@ -22,3 +22,22 @@ def route_minutes(edges, source, target, nodes=()):
         return {'reachable': True, 'path': path, 'estimated_model_minutes': minutes}
     except (nx.NetworkXNoPath, nx.NodeNotFound):
         return {'reachable': False, 'path': [], 'estimated_model_minutes': None}
+
+
+def route_geometry(edges, path, nodes):
+    """Expand a node path along the same cheapest usable edges as usable_graph.
+
+    Compacted HOT edges retain every mapped bend. Drawing only the junctions
+    would cut across rivers or terrain instead of following the mapped route.
+    """
+    if not path:
+        return []
+    geometry = []
+    for source, target in zip(path, path[1:]):
+        candidates = [e for e in edges if not e['blocked'] and
+                      {e['from'], e['to']} == {source, target}]
+        edge = min(candidates, key=lambda e: float(e['weight_min']))
+        points = edge.get('board_uv', [nodes[edge['from']]['board_uv'], nodes[edge['to']]['board_uv']])
+        points = points if edge['from'] == source else list(reversed(points))
+        geometry.extend(points if not geometry else points[1:])
+    return geometry or [nodes[path[0]]['board_uv']]

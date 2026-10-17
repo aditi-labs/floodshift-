@@ -15,8 +15,8 @@ def place(service, piece_type, target_site, token_id=None, **overrides):
     return service.apply(action)
 
 
-def staged_world():
-    service = WorldService()
+def staged_world(bundle_path=None):
+    service = WorldService.from_bundle(bundle_path) if bundle_path else WorldService()
     for kind, site in [('disaster_start', 'start_pad'), ('person', 'people_east'),
                        ('hospital', 'medical_site_west'), ('food_shelter', 'food_site_west'),
                        ('shelter', 'shelter_site_west')]:
@@ -29,8 +29,9 @@ def staged_world():
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--write-fixtures', action='store_true')
+    parser.add_argument('--bundle', type=Path, help='Opt into a bundle without changing shared schematic fixtures')
     args = parser.parse_args()
-    service = staged_world()
+    service = staged_world(args.bundle)
     before = service.snapshot()
     result = place(service, 'bridge', 'crossing_east')
     assert result['accepted'], result['reason']
@@ -41,6 +42,11 @@ def main():
                      'scenarios/nepal_rasuwa_v1/data/fixture_after_bridge.json': after,
                      'scenarios/nepal_rasuwa_v1/data/demo_actions.json':
                          [event['action'] for event in service.event_log()]}
+        if args.bundle:
+            output = args.bundle.resolve() / 'data'
+            artifacts = {output / 'fixture_world.json': before,
+                         output / 'fixture_after_bridge.json': after,
+                         output / 'demo_actions.json': [event['action'] for event in service.event_log()]}
         for name, value in artifacts.items():
             path = root / name
             path.parent.mkdir(parents=True, exist_ok=True)

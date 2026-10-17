@@ -123,9 +123,12 @@ URLs, SHA-256 hashes, licenses, resource dates, fields, geometry counts and boun
 Raw downloads stay outside Git. Retain `© OpenStreetMap contributors` attribution
 and the recorded ODbL source license when displaying or redistributing this data.
 
-**Remaining P4 work:** validate candidate graph topology, match a real crossing,
-curate compact real-map scenario sites, and promote the HOT bundle only after the
-same causal tests pass. Source mapped status never establishes route safety,
+**HOT milestone now available:** `scenarios/nepal_rasuwa_hot_v1` is an explicit
+opt-in bundle with source-matched crossings, compacted mapped roads and passing
+causal tests. See [HOT_HANDOFF.md](HOT_HANDOFF.md) for the exact load path, fixtures,
+board frame, validation evidence and remaining integration work. The schematic
+default and shared fixture remain stable for P2/P3's existing work.
+Source mapped status never establishes route safety,
 facility operability, local demand or damage prediction. Live Gemini and optional
 Tiger Data remain behind core integration. P1 owns print artwork/attribution docs;
 P2 owns rendering; P3 owns the integrated server. No work in those lanes is included.

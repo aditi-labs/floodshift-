@@ -1,5 +1,5 @@
 """Allocate each independent need once, with stable nearest-service ordering."""
-from backend.simulation.routing import route_minutes
+from backend.simulation.routing import route_minutes, route_geometry
 
 NEEDS = {'hospital': ('medical', 'medical'), 'food_shelter': ('food', 'food'),
          'shelter': ('refuge', 'shelter')}
@@ -55,7 +55,7 @@ def measure(bundle, state):
                 remaining -= amount
                 allocations.append({'population_id': person['id'], 'facility_id': facility['id'],
                                     'need': need, 'units_model': amount, **result,
-                                    'board_uv': [nodes[n]['board_uv'] for n in result['path']]})
+                                    'board_uv': route_geometry(edges, result['path'], nodes)})
             metrics['unmet_' + need + '_model'] += remaining
     metrics['reachable_communities'] = sum(route(bundle['depot_node'], p['node_id'])['reachable'] for p in people)
     metrics['road_access_fraction'] = sum(not e['blocked'] for e in edges) / len(edges) if edges else 0
