@@ -10,6 +10,7 @@ from backend.simulation.reachability import measure
 from backend.simulation.routing import route_minutes
 from backend.world.rules import SOURCES, RuleError, initial_state, reduce_action, require
 from backend.world.scenarios import load_bundle
+from backend.world.session_store import SessionStore, SessionError, SessionConflict, fingerprint
 
 
 class WorldService:
@@ -22,20 +23,55 @@ class WorldService:
         self._history = {'snap-0': deepcopy(self._state)}
         self._branches = {'main': deepcopy(self._state)}
         self._lock = RLock()
+        self._store = None
 
     @classmethod
     def from_bundle(cls, path):
         return cls(load_bundle(path))
 
-    def _snapshot(self):
-        return {'schema_version': 2, 'world_version': self._version,
-                'snapshot_id': 'snap-' + str(self._version),
+    @classmethod
+    def open_session(cls, session_path, bundle_path=None):
+        """Resume a compatible checkpoint or create a new durable session.
+
+        Corrupt/incompatible sessions raise SessionError; never silently reset.
+        """
+        service = cls(load_bundle(bundle_path))
+        store = SessionStore(session_path)
+        payload = store.read()
+        if payload is None:
+            store.save(service._checkpoint([], service.snapshot()))
+        else:
+            try:
+                if payload['format_version'] != 1 or payload['bundle_fingerprint'] != fingerprint(service._bundle):
+                    raise SessionError('session_bundle_or_format_mismatch')
+                if not isinstance(payload['events'], list):
+                    raise SessionError('invalid_session_events')
+                for event in payload['events']:
+                    result = service.apply(event['action'])
+                    if not result['accepted']:
+                        raise SessionError('session_replay_rejected')
+                if service.event_log() != payload['events'] or service.snapshot() != payload['snapshot']:
+                    raise SessionError('session_replay_mismatch')
+            except (KeyError, TypeError, ValueError) as error:
+                raise SessionError('invalid_session_payload') from error
+        service._store = store
+        return service
+
+    def _checkpoint(self, events, snapshot):
+        return {'format_version': 1, 'bundle_fingerprint': fingerprint(self._bundle),
+                'events': events, 'snapshot': snapshot}
+
+    def _snapshot(self, state=None, version=None):
+        state = self._state if state is None else state
+        version = self._version if version is None else version
+        return {'schema_version': 2, 'world_version': version,
+                'snapshot_id': 'snap-' + str(version),
                 'scenario_id': self._bundle['scenario_id'],
-                **{k: deepcopy(self._state[k]) for k in ('phase', 'simulation_stage', 'branch_id',
+                **{k: deepcopy(state[k]) for k in ('phase', 'simulation_stage', 'branch_id',
                    'token_inventory', 'budget_remaining_model', 'narration_event')},
-                'tokens': deepcopy(sorted(self._state['tokens'].values(), key=lambda t: t['id'])),
-                **measure(self._bundle, self._state),
-                'ghost_suggestion': best_suggestion(self._bundle, self._state),
+                'tokens': deepcopy(sorted(state['tokens'].values(), key=lambda t: t['id'])),
+                **measure(self._bundle, state),
+                'ghost_suggestion': best_suggestion(self._bundle, state),
                 'provenance_label': self._bundle['provenance_label'],
                 'data_mode': self._bundle['data_mode']}
 
@@ -74,6 +110,18 @@ class WorldService:
     def event_log(self):
         with self._lock:
             return deepcopy(self._events)
+
+    def frozen_copy(self):
+        """Detached version-consistent view for narration; no persistence attached."""
+        with self._lock:
+            clone = WorldService(self._bundle)
+            clone._state = deepcopy(self._state)
+            clone._version = self._version
+            clone._branches = deepcopy(self._branches)
+            clone._history = deepcopy(self._history)
+            clone._seen = set(self._seen)
+            clone._events = deepcopy(self._events)
+            return clone
 
     def apply(self, action):
         with self._lock:
@@ -118,14 +166,27 @@ class WorldService:
                 return {'accepted': False, 'reason': str(error), 'world_version': self._version,
                         'snapshot': self.snapshot()}
             before = measure(self._bundle, self._state)['metrics']
+            version = self._version + 1
+            snapshot = deepcopy(self._snapshot(next_state, version))
+            event = {'timestamp': action.get('timestamp_utc'),
+                'branch_id': next_state['branch_id'], 'before_version': self._version,
+                'after_version': version, 'action': action, 'metrics_before': before,
+                'metrics_after': snapshot['metrics']}
+            if self._store is not None:
+                try:
+                    self._store.save(self._checkpoint(self._events + [event], snapshot))
+                except SessionError as error:
+                    reason = 'session_conflict' if isinstance(error, SessionConflict) else 'persistence_unavailable'
+                    return {'accepted': False, 'reason': reason, 'world_version': self._version,
+                            'snapshot': self.snapshot()}
+                except (TypeError, ValueError):
+                    return {'accepted': False, 'reason': 'invalid_action', 'world_version': self._version,
+                            'snapshot': self.snapshot()}
+            # Acknowledgement occurs only after the durable transaction succeeds.
             self._state = next_state
-            self._version += 1
+            self._version = version
             self._seen.add(action['action_id'])
             self._branches[next_state['branch_id']] = deepcopy(next_state)
             self._history['snap-' + str(self._version)] = deepcopy(next_state)
-            snapshot = self.snapshot()
-            self._events.append({'timestamp': action.get('timestamp_utc'),
-                'branch_id': next_state['branch_id'], 'before_version': self._version - 1,
-                'after_version': self._version, 'action': action, 'metrics_before': before,
-                'metrics_after': snapshot['metrics']})
+            self._events.append(deepcopy(event))
             return {'accepted': True, 'reason': None, 'world_version': self._version, 'snapshot': snapshot}

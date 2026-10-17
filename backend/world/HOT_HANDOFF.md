@@ -110,5 +110,7 @@ P3 can load this service bundle and broadcast returned snapshots; P2 can render
 the matching fixture and curved routes; P1 can prepare square-frame print artwork.
 Those remain their owned tasks. Physical token fit and camera/projector alignment
 require their hardware measurements. P4 can adjust tolerances when those arrive.
-Live Gemini, persistent event storage and optional Tiger Data remain separate
-later work; this milestone requires no cloud keys or hardware.
+Durable local sessions and the optional Gemini adapter are now implemented; see
+[SESSION_HANDOFF.md](SESSION_HANDOFF.md). Live Gemini verification still requires
+local credentials. Tiger Data remains optional and unimplemented. Offline world
+simulation requires no cloud keys or hardware.

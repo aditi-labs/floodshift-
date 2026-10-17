@@ -90,15 +90,18 @@ fields and token vocabulary are preserved.
   current snapshot), creates a new branch and switches to it. Old branch heads
   remain immutable; rewind by creating a new branch from a saved snapshot ID.
   All actions still use a global increasing world version to reject stale input.
-- Events/snapshots are in-memory and bounded by session usage, not persisted across
-  process restarts. Export `event_log()` for deterministic replay.
+- The default service keeps events/snapshots in memory. `WorldService.open_session`
+  adds durable SQLite checkpoints and verified restart recovery; see
+  [SESSION_HANDOFF.md](SESSION_HANDOFF.md). Export `event_log()` for deterministic replay.
 
 ## Read-only narration
 
 `backend.narration.tools.WorldTools(world)` provides the seven read-only tools in
 the specification, with an explicit dispatch allowlist. `narration_fallback.narrate`
-uses one current snapshot and labels outcomes illustrative. Gemini is **not live**;
-use `GEMINI=TEXT`. No API key or cloud SDK is needed for this milestone.
+uses one current snapshot and labels outcomes illustrative. The optional
+`GeminiNarrator` adapter is now implemented with read-only function calling and
+TEXT fallback; see [SESSION_HANDOFF.md](SESSION_HANDOFF.md). Live API verification
+still requires local credentials. No key or cloud SDK is needed for offline mode.
 
 ## Data status and reproduction
 
