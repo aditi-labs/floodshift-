@@ -4,3 +4,5 @@ dist/
 .env.local
 *.tsbuildinfo
 .vite/
+# root .gitignore ignores lib/ (Python template); keep our TS lib
+!src/lib/
