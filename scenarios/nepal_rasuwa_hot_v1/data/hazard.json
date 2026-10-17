@@ -1,0 +1,11 @@
+{
+  "method": "illustrative_disruption_mask",
+  "stages": [
+    [],
+    [
+      "crossing_east_road",
+      "crossing_south_road",
+      "crossing_west_road"
+    ]
+  ]
+}

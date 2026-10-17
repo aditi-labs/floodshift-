@@ -1,0 +1,66 @@
+[
+  {
+    "id": "depot",
+    "board_uv": [
+      0.1,
+      0.5
+    ],
+    "origin": "scenario_synthetic"
+  },
+  {
+    "id": "west",
+    "board_uv": [
+      0.35,
+      0.5
+    ],
+    "origin": "scenario_synthetic"
+  },
+  {
+    "id": "east",
+    "board_uv": [
+      0.6,
+      0.5
+    ],
+    "origin": "scenario_synthetic"
+  },
+  {
+    "id": "village",
+    "board_uv": [
+      0.75,
+      0.4
+    ],
+    "origin": "scenario_synthetic"
+  },
+  {
+    "id": "medical",
+    "board_uv": [
+      0.2,
+      0.25
+    ],
+    "origin": "scenario_synthetic"
+  },
+  {
+    "id": "food",
+    "board_uv": [
+      0.2,
+      0.6
+    ],
+    "origin": "scenario_synthetic"
+  },
+  {
+    "id": "refuge",
+    "board_uv": [
+      0.35,
+      0.75
+    ],
+    "origin": "scenario_synthetic"
+  },
+  {
+    "id": "north",
+    "board_uv": [
+      0.65,
+      0.15
+    ],
+    "origin": "scenario_synthetic"
+  }
+]

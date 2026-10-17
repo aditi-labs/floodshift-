@@ -1,12 +1,11 @@
-/**
- * FLOODSHIFT Shared Contracts - Schema Version 2
- * TypeScript mirror of backend/contracts.py
- * Person 2 owns this file (mirrors P3's Pydantic schemas)
- */
+// Mirror of backend/contracts.py (P3, schema_version 2) — that file is authoritative.
+// If a field changes there, change it here in the same PR and bump SCHEMA_VERSION.
+//
+// Fields marked `PROPOSED (P2)` are not yet in the master spec's snapshot example;
+// they are optional so the UI still renders a snapshot that omits them. See the
+// "P2 proposed snapshot extensions" note in the master spec change log.
 
-// =============================================================================
-// TOKEN TYPES - Six required pieces
-// =============================================================================
+export const SCHEMA_VERSION = 2;
 
 export type TokenType =
   | "hospital"
@@ -19,6 +18,15 @@ export type TokenType =
   | "helicopter"
   | "time_dial";
 
+export const CORE_TOKENS = [
+  "disaster_start",
+  "person",
+  "hospital",
+  "shelter",
+  "food_shelter",
+  "bridge",
+] as const satisfies readonly TokenType[];
+
 export type SiteKind =
   | "medical_site"
   | "shelter_site"
@@ -29,81 +37,31 @@ export type SiteKind =
 
 export type Phase = "ready" | "disaster_active";
 
-export type VisionStatus = "pending" | "confirmed" | "rejected" | "unavailable";
+export type UV = [number, number];
 
-export type VisionSource = "perceptron" | "manual" | "replay";
+export type VisionSource = "perceptron" | "replay" | "manual";
+export type TokenStatus = "accepted" | "pending" | "rejected";
 
-// =============================================================================
-// OBJECT OBSERVATION - Person 3 produces
-// =============================================================================
-
-export interface ObjectObservation {
-  event_type: "object_observed";
-  event_id: string;
-  frame_id: number;
-  token_id: string;
-  object_type: TokenType;
-  class_source: VisionSource;
-  perceptron_box_1000: [number, number, number, number] | null;
-  board_uv: [number, number];
-  rotation_deg: number;
-  stable_ms: number;
-  vision_status: VisionStatus;
-  frame_provenance: string;
-}
-
-// =============================================================================
-// WORLD ACTION - P2 manual controls / P3 gateway -> P4 reducer
-// =============================================================================
-
-export type ActionType =
-  | "place_token"
-  | "move_token"
-  | "remove_token"
-  | "advance_stage"
-  | "reset"
-  | "suggest"
-  | "branch"
-  | "compare";
-
-export interface WorldAction {
-  action_id: string;
-  type: ActionType;
-  source: "physical_perceptron" | "manual" | "replay";
-  token_id?: string;
-  token_type?: TokenType;
-  site_id?: string;
-  board_uv?: [number, number];
-  expected_world_version: number;
-  timestamp_utc?: string;
-}
-
-export interface ActionResult {
-  accepted: boolean;
-  action_id: string;
-  world_version: number;
-  rejection_reason?: string;
-}
-
-// =============================================================================
-// WORLD SNAPSHOT - P4 produces, P3 serves, P2 renders
-// =============================================================================
-
-export interface TokenState {
+/** backend TokenState. With markerless tracking (spec §07b) ids look like "tracked-<n>". */
+export interface PlacedToken {
   id: string;
   type: TokenType;
-  board_uv: [number, number];
-  site_id?: string;
+  board_uv: UV;
+  site_id?: string | null;
   vision_source: VisionSource;
-  status: "accepted" | "pending" | "rejected";
+  status: TokenStatus;
+  rotation_deg?: number;
 }
 
-export interface FacilityState {
+/** backend FacilityState */
+export interface Facility {
   id: string;
   type: TokenType;
   capacity_model: number;
   used_capacity_model: number;
   reachable: boolean;
+  /** PROPOSED (P2): which site the facility sits on, for icon placement. */
+  site_id?: string;
 }
 
 export interface PopulationDemand {
@@ -118,10 +76,11 @@ export interface PopulationDemand {
 export interface EdgeState {
   id: string;
   blocked: boolean;
-  reason?: string;
+  reason?: string | null;
 }
 
-export interface WorldMetrics {
+/** backend WorldMetrics */
+export interface Metrics {
   people_reachable_for_medical: number;
   people_reachable_for_food: number;
   people_reachable_for_shelter: number;
@@ -134,13 +93,26 @@ export interface WorldMetrics {
 export interface GhostSuggestion {
   token_type: TokenType;
   site_id: string;
-  board_uv: [number, number];
+  board_uv: UV;
   reason_code: string;
+  /** PROPOSED (P2): edge ids of the preview route to draw as a cyan dashed line. */
+  preview_edge_ids?: string[];
 }
 
 export interface NarrationEvent {
   event_type: string;
   model_only: boolean;
+}
+
+export type ServiceKind = "medical" | "food" | "refuge";
+
+/** PROPOSED (P2): backend-computed service route, so React never runs routing. */
+export interface ServiceRoute {
+  population_id: string;
+  service: ServiceKind;
+  facility_id: string | null;
+  reachable: boolean;
+  edge_ids: string[];
 }
 
 export interface WorldSnapshot {
@@ -150,70 +122,127 @@ export interface WorldSnapshot {
   phase: Phase;
   simulation_stage: number;
   branch_id: string;
-  token_inventory: Record<string, number>;
-  tokens: TokenState[];
-  facilities: FacilityState[];
+  token_inventory: Partial<Record<TokenType, number>>;
+  tokens: PlacedToken[];
+  facilities: Facility[];
   population_demand: PopulationDemand[];
   edges: EdgeState[];
-  metrics: WorldMetrics;
-  ghost_suggestion?: GhostSuggestion;
-  narration_event?: NarrationEvent;
+  metrics: Metrics;
+  ghost_suggestion?: GhostSuggestion | null;
+  narration_event?: NarrationEvent | null;
   provenance_label: string;
+  /** PROPOSED (P2) */
+  service_routes?: ServiceRoute[];
 }
 
-// =============================================================================
-// API SCHEMAS
-// =============================================================================
+export type ActionType =
+  | "place_token"
+  | "move_token"
+  | "remove_token"
+  | "advance_stage"
+  | "reset"
+  | "suggest"
+  | "branch"
+  | "compare";
 
-export interface HealthResponse {
-  status: string;
-  world_version?: number;
-  vision_mode: string;
-  perceptron_status: string;
-  gemini_status: string;
+export type ActionSource = "physical_perceptron" | "manual" | "replay";
+
+export interface WorldAction {
+  action_id: string;
+  type: ActionType;
+  source: ActionSource;
+  token_id?: string | null;
+  token_type?: TokenType | null;
+  site_id?: string | null;
+  board_uv?: UV | null;
+  expected_world_version: number;
+  timestamp_utc?: string;
 }
 
-export interface SuggestRequest {
-  goal_id?: string;
+/** Response of POST /action. Rejections are rendered, never computed, by the UI. */
+export interface ActionResult {
+  accepted: boolean;
+  action_id: string;
+  world_version: number;
+  rejection_reason?: string | null;
 }
 
-export interface BranchSaveRequest {
-  name: string;
+/** Response of POST /plan/suggest (backend/main.py). */
+export interface SuggestResponse {
+  has_suggestion: boolean;
+  suggestion: GhostSuggestion | null;
+  world_version: number;
 }
 
-export interface BranchLoadRequest {
-  branch_id: string;
-}
-
-export interface NarrateRequest {
-  question: string;
-}
-
+/** Response of POST /narrate. */
 export interface NarrateResponse {
   answer: string;
   grounded_in_version: number;
 }
 
-// =============================================================================
-// WEBSOCKET EVENT ENVELOPE
-// =============================================================================
-
-export type WSEventType = "world.snapshot" | "vision.status" | "narration" | "warning" | "server.hello";
-
-export interface WSEvent {
-  type: WSEventType;
-  seq: number;
-  sent_at: string;
-  payload: Record<string, unknown>;
+export interface HealthResponse {
+  status: string;
+  world_version?: number | null;
+  vision_mode: string;
+  perceptron_status: string;
+  gemini_status: string;
 }
 
-// =============================================================================
-// GEOMETRY HELPERS (for projection)
-// =============================================================================
+export type VisionStatus = "pending" | "confirmed" | "rejected" | "unavailable";
 
-export const BOARD_WIDTH = 1000;
-export const BOARD_HEIGHT = 707.14; // 1000 * 297 / 420 (A3 ratio)
-
-export function toSvgPoint(u: number, v: number): { x: number; y: number } {
-  return { x: u * BOARD_WIDTH, y: v * BOARD_HEIGHT };
+export interface ObjectObservation {
+  event_type: "object_observed";
+  event_id: string;
+  frame_id: number;
+  token_id: string;
+  object_type: TokenType;
+  class_source: VisionSource;
+  perceptron_box_1000?: [number, number, number, number] | null;
+  board_uv: UV;
+  rotation_deg?: number;
+  stable_ms?: number;
+  vision_status: VisionStatus;
+  frame_provenance?: string;
 }
+
+export interface BranchComparison {
+  baseline_snapshot_id: string;
+  branches: Array<{ id: string; action: string; [metric: string]: number | string }>;
+  metric_provenance: string;
+}
+
+export type Envelope =
+  | { type: "world.snapshot"; seq: number; sent_at: string; payload: WorldSnapshot }
+  | { type: "vision.status"; seq: number; sent_at: string; payload: { observations: ObjectObservation[]; latency_ms?: number } }
+  | { type: "narration"; seq: number; sent_at: string; payload: { text: string; source: "gemini" | "template" } }
+  | { type: "warning"; seq: number; sent_at: string; payload: { code: string; message: string } }
+  | { type: "server.hello"; seq?: number; sent_at?: string; payload: { status: string } };
+
+export interface ModeBadges {
+  VISION: "LIVE_PERCEPTRON" | "REPLAY" | "MANUAL";
+  PROJECTOR: "CALIBRATED" | "SCREEN";
+  GEMINI: "LIVE" | "TEXT" | "OFF";
+  DATA: "HOT_DERIVED" | "SCHEMATIC";
+}
+
+export const TOKEN_LABELS: Record<TokenType, string> = {
+  hospital: "Hospital / Field Care",
+  shelter: "Emergency Shelter",
+  food_shelter: "Food & Water",
+  bridge: "Temporary Bridge",
+  disaster_start: "Start Disaster",
+  person: "People / Household",
+  truck: "Relief Truck",
+  helicopter: "Helicopter",
+  time_dial: "Time Dial",
+};
+
+/** Which site kind each token may target; mirrors contracts/token_catalog.json valid_site_kinds. */
+export const TOKEN_SITE_KIND: Partial<Record<TokenType, SiteKind>> = {
+  hospital: "medical_site",
+  shelter: "shelter_site",
+  food_shelter: "food_site",
+  bridge: "bridge_crossing",
+  disaster_start: "control_start_pad",
+  person: "population_node",
+};

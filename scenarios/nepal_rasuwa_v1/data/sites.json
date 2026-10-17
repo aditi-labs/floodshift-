@@ -1,0 +1,165 @@
+[
+  {
+    "id": "start_pad",
+    "kind": "control_start_pad",
+    "node_id": "depot",
+    "board_uv": [
+      0.08,
+      0.9
+    ],
+    "tolerance_uv": 0.055,
+    "approved": true,
+    "hazard_exposed": false,
+    "resource_cost": 0,
+    "origin": "scenario_synthetic"
+  },
+  {
+    "id": "people_east",
+    "kind": "population_node",
+    "node_id": "village",
+    "board_uv": [
+      0.75,
+      0.4
+    ],
+    "tolerance_uv": 0.055,
+    "approved": true,
+    "hazard_exposed": false,
+    "resource_cost": 0,
+    "origin": "scenario_synthetic",
+    "demand": {
+      "households_model": 1,
+      "people_model": 8,
+      "need_food": 8,
+      "need_medical": 2,
+      "need_refuge": 8
+    }
+  },
+  {
+    "id": "people_west",
+    "kind": "population_node",
+    "node_id": "west",
+    "board_uv": [
+      0.35,
+      0.5
+    ],
+    "tolerance_uv": 0.055,
+    "approved": true,
+    "hazard_exposed": false,
+    "resource_cost": 0,
+    "origin": "scenario_synthetic",
+    "demand": {
+      "households_model": 1,
+      "people_model": 8,
+      "need_food": 8,
+      "need_medical": 2,
+      "need_refuge": 8
+    }
+  },
+  {
+    "id": "medical_site_west",
+    "kind": "medical_site",
+    "node_id": "medical",
+    "board_uv": [
+      0.2,
+      0.25
+    ],
+    "tolerance_uv": 0.055,
+    "approved": true,
+    "hazard_exposed": false,
+    "resource_cost": 1,
+    "origin": "scenario_synthetic",
+    "capacity_model": 3
+  },
+  {
+    "id": "food_site_west",
+    "kind": "food_site",
+    "node_id": "food",
+    "board_uv": [
+      0.2,
+      0.6
+    ],
+    "tolerance_uv": 0.055,
+    "approved": true,
+    "hazard_exposed": false,
+    "resource_cost": 1,
+    "origin": "scenario_synthetic",
+    "capacity_model": 10
+  },
+  {
+    "id": "food_site_east",
+    "kind": "food_site",
+    "node_id": "east",
+    "board_uv": [
+      0.6,
+      0.5
+    ],
+    "tolerance_uv": 0.055,
+    "approved": true,
+    "hazard_exposed": false,
+    "resource_cost": 1,
+    "origin": "scenario_synthetic",
+    "capacity_model": 10
+  },
+  {
+    "id": "shelter_site_west",
+    "kind": "shelter_site",
+    "node_id": "refuge",
+    "board_uv": [
+      0.35,
+      0.75
+    ],
+    "tolerance_uv": 0.055,
+    "approved": true,
+    "hazard_exposed": false,
+    "resource_cost": 1,
+    "origin": "scenario_synthetic",
+    "capacity_model": 10
+  },
+  {
+    "id": "shelter_site_exposed",
+    "kind": "shelter_site",
+    "node_id": "east",
+    "board_uv": [
+      0.65,
+      0.65
+    ],
+    "tolerance_uv": 0.055,
+    "approved": true,
+    "hazard_exposed": true,
+    "resource_cost": 1,
+    "origin": "scenario_synthetic",
+    "capacity_model": 10
+  },
+  {
+    "id": "crossing_east",
+    "kind": "bridge_crossing",
+    "node_id": "west",
+    "board_uv": [
+      0.475,
+      0.5
+    ],
+    "tolerance_uv": 0.055,
+    "approved": true,
+    "hazard_exposed": false,
+    "resource_cost": 2,
+    "origin": "scenario_synthetic",
+    "edge_id": "crossing_east_road",
+    "rotation_deg": 0
+  },
+  {
+    "id": "crossing_north",
+    "kind": "bridge_crossing",
+    "node_id": "north",
+    "board_uv": [
+      0.5,
+      0.325
+    ],
+    "tolerance_uv": 0.055,
+    "approved": true,
+    "hazard_exposed": false,
+    "resource_cost": 2,
+    "origin": "scenario_synthetic",
+    "edge_id": "crossing_north_road",
+    "rotation_deg": -50
+  }
+]

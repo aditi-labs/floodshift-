@@ -45,7 +45,8 @@ class MockWorldService:
 
     def __init__(self, fixture_path: Path | None = None):
         if fixture_path is None:
-            fixture_path = Path(__file__).parent.parent.parent / "contracts" / "fixture_world.json"
+            # The shared P4 fixture is a staged demo; the mock resets to ready.
+            fixture_path = Path(__file__).parent.parent.parent / "contracts" / "fixture_mock_world.json"
 
         with open(fixture_path) as f:
             self._initial_state = json.load(f)

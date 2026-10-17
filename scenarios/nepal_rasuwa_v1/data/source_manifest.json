@@ -1,0 +1,6 @@
+{
+  "data_mode": "SCHEMATIC",
+  "origin": "scenario_synthetic",
+  "historical_geometry_used": false,
+  "note": "Official HOT/HDX sources inspected separately. The runtime fixture uses no downloaded geometry; all demand, damage and service quantities are invented."
+}

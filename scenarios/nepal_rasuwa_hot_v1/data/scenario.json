@@ -1,0 +1,31 @@
+{
+  "scenario_id": "nepal_rasuwa_hot_v1",
+  "scenario_version": 2,
+  "depot_node": "336740.745:3116467.408",
+  "budget_model": 5,
+  "token_inventory": {
+    "disaster_start": 1,
+    "person": 2,
+    "hospital": 1,
+    "food_shelter": 1,
+    "shelter": 1,
+    "bridge": 1
+  },
+  "data_mode": "HOT_DERIVED",
+  "routing_mode": "illustrative_mixed_road_and_footpath_access",
+  "provenance_label": "HOT/OSM mapped geography; closures, demand, service pads and intervention outcomes are educational assumptions, not operational guidance.",
+  "board": {
+    "uv_origin": "top_left",
+    "width_mm": 420,
+    "height_mm": 420,
+    "dimensions_provisional": true,
+    "aspect_ratio": 1.0,
+    "control_inset_uv": [
+      0.84,
+      0.84,
+      1.0,
+      1.0
+    ]
+  },
+  "cost_policy": "Removing or moving a token refunds its model deployment cost; START is latched until reset."
+}

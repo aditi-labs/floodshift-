@@ -1,0 +1,22 @@
+{
+  "scenario_id": "nepal_rasuwa_v1",
+  "scenario_version": 2,
+  "depot_node": "depot",
+  "budget_model": 5,
+  "token_inventory": {
+    "disaster_start": 1,
+    "person": 2,
+    "hospital": 1,
+    "food_shelter": 1,
+    "shelter": 1,
+    "bridge": 1
+  },
+  "data_mode": "SCHEMATIC",
+  "provenance_label": "Schematic educational fixture; geography, disruptions, capacities and people are illustrative, not historical measurements.",
+  "board": {
+    "uv_origin": "top_left",
+    "width_mm": 420,
+    "height_mm": 297
+  },
+  "cost_policy": "Removing or moving a token refunds its model deployment cost; START is latched until reset."
+}
