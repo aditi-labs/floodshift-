@@ -1,0 +1,235 @@
+{
+  "dataset": "Nepal Flood 2026 River Corridor, Bhote Koshi and Trishuli",
+  "inventory_url": "https://data.humdata.org/api/3/action/package_show?id=hot_flood_npl_corridor",
+  "coverage": "NPL_CORRIDOR (wider corridor, not the NPL affected-area extract)",
+  "license": "Open Database License (ODC-ODbL)",
+  "dataset_modified": "2026-10-08T19:45:49.113463",
+  "retrieved_utc": "2026-10-17T20:50:36.851190+00:00",
+  "attribution": "© OpenStreetMap contributors; HOT via HDX",
+  "resources": [
+    {
+      "layer": "bridges",
+      "filename": "hot_flood_npl_corridor_bridges_osm.geojson",
+      "url": "https://production-raw-data-api.s3.amazonaws.com/ISO3/NPL_CORRIDOR/bridges/hot_flood_npl_corridor_bridges_osm.geojson",
+      "format": "GeoJSON",
+      "modified": "2026-10-04T03:05:36.260144",
+      "bytes": 154464,
+      "sha256": "8cb591fb9fe282098c7785327fb7529aa6442920dd045ce002fcb7a0a23a4d2e"
+    },
+    {
+      "layer": "roads",
+      "filename": "hot_flood_npl_corridor_roads_osm_gpkg.zip",
+      "url": "https://production-raw-data-api.s3.amazonaws.com/ISO3/NPL_CORRIDOR/roads/hot_flood_npl_corridor_roads_osm_gpkg.zip",
+      "format": "Geopackage",
+      "modified": "2026-10-04T03:05:36.262079",
+      "bytes": 2026024,
+      "sha256": "b7d10e66716298ad09bc8f6cdc769cfbfe5e7c9a56b7e3f30cbe0a25131355ed"
+    },
+    {
+      "layer": "waterways",
+      "filename": "hot_flood_npl_corridor_waterways_osm.geojson",
+      "url": "https://production-raw-data-api.s3.amazonaws.com/ISO3/NPL_CORRIDOR/waterways/hot_flood_npl_corridor_waterways_osm.geojson",
+      "format": "GeoJSON",
+      "modified": "2026-10-04T03:05:36.262334",
+      "bytes": 1570790,
+      "sha256": "9c5470ce26b572f5fcba03cc79586d04f9cdcde2e21ae69da9311f9465439fe3"
+    },
+    {
+      "layer": "settlements",
+      "filename": "hot_flood_npl_corridor_populated_places_osm.geojson",
+      "url": "https://production-raw-data-api.s3.amazonaws.com/ISO3/NPL_CORRIDOR/populated_places/hot_flood_npl_corridor_populated_places_osm.geojson",
+      "format": "GeoJSON",
+      "modified": "2026-10-04T03:05:36.262176",
+      "bytes": 100415,
+      "sha256": "a36d1a582bcd9430761c0c8217bf2f88be6d8af2792d3132b2b2cd3cca9aa954"
+    }
+  ],
+  "anchor_source_id": "node/14127413536",
+  "anchor_lonlat": [
+    85.3427433,
+    28.164569
+  ],
+  "projected_crs": "EPSG:32645",
+  "projected_bounds": [
+    336089.89297685644,
+    3115343.646000852,
+    338489.89297685644,
+    3117743.646000852
+  ],
+  "aoi_wgs84_bounds": [
+    85.33035699550832,
+    28.153592694769326,
+    85.35512714690891,
+    28.17554433170786
+  ],
+  "board_transform": {
+    "origin": "top_left",
+    "bounds_projected": [
+      336089.89297685644,
+      3115343.646000852,
+      338489.89297685644,
+      3117743.646000852
+    ],
+    "u": "(x-xmin)/(xmax-xmin)",
+    "v": "(ymax-y)/(ymax-ymin)"
+  },
+  "runtime_promoted": false,
+  "layers": {
+    "bridges": {
+      "input_count": 220,
+      "invalid_geometry_count": 0,
+      "clipped_count": 4,
+      "fields": [
+        "adm0_name",
+        "adm0_pcode",
+        "adm1_name",
+        "adm1_pcode",
+        "adm2_name",
+        "adm2_pcode",
+        "adm3_name",
+        "adm3_pcode",
+        "adm4_name",
+        "adm4_pcode",
+        "bridge",
+        "bridge_structure",
+        "highway",
+        "id",
+        "layer",
+        "man_made",
+        "maxweight",
+        "name",
+        "name_en",
+        "name_latin",
+        "name_ne",
+        "railway",
+        "source",
+        "status",
+        "waterway",
+        "width"
+      ],
+      "source_crs": "EPSG:4326",
+      "geometry_types": {
+        "LineString": 219,
+        "Point": 1
+      },
+      "source_resource": "https://production-raw-data-api.s3.amazonaws.com/ISO3/NPL_CORRIDOR/bridges/hot_flood_npl_corridor_bridges_osm.geojson"
+    },
+    "roads": {
+      "input_count": 5379,
+      "invalid_geometry_count": 0,
+      "clipped_count": 59,
+      "fields": [
+        "adm0_name",
+        "adm0_pcode",
+        "adm1_name",
+        "adm1_pcode",
+        "adm2_name",
+        "adm2_pcode",
+        "adm3_name",
+        "adm3_pcode",
+        "adm4_name",
+        "adm4_pcode",
+        "bridge",
+        "highway",
+        "id",
+        "lanes",
+        "layer",
+        "name",
+        "name_en",
+        "name_latin",
+        "name_ne",
+        "oneway",
+        "smoothness",
+        "source",
+        "status",
+        "surface",
+        "width"
+      ],
+      "source_crs": "EPSG:4326",
+      "geometry_types": {
+        "LineString": 5344,
+        "Point": 33,
+        "Polygon": 2
+      },
+      "source_resource": "https://production-raw-data-api.s3.amazonaws.com/ISO3/NPL_CORRIDOR/roads/hot_flood_npl_corridor_roads_osm_gpkg.zip"
+    },
+    "waterways": {
+      "input_count": 570,
+      "invalid_geometry_count": 0,
+      "clipped_count": 4,
+      "fields": [
+        "adm0_name",
+        "adm0_pcode",
+        "adm1_name",
+        "adm1_pcode",
+        "adm2_name",
+        "adm2_pcode",
+        "adm3_name",
+        "adm3_pcode",
+        "adm4_name",
+        "adm4_pcode",
+        "blockage",
+        "covered",
+        "depth",
+        "id",
+        "layer",
+        "name",
+        "name_en",
+        "name_latin",
+        "name_ne",
+        "natural_class",
+        "source",
+        "status",
+        "tunnel",
+        "water",
+        "waterway",
+        "width"
+      ],
+      "source_crs": "EPSG:4326",
+      "geometry_types": {
+        "LineString": 452,
+        "Polygon": 110,
+        "Point": 8
+      },
+      "source_resource": "https://production-raw-data-api.s3.amazonaws.com/ISO3/NPL_CORRIDOR/waterways/hot_flood_npl_corridor_waterways_osm.geojson"
+    },
+    "settlements": {
+      "input_count": 149,
+      "invalid_geometry_count": 0,
+      "clipped_count": 4,
+      "fields": [
+        "adm0_name",
+        "adm0_pcode",
+        "adm1_name",
+        "adm1_pcode",
+        "adm2_name",
+        "adm2_pcode",
+        "adm3_name",
+        "adm3_pcode",
+        "adm4_name",
+        "adm4_pcode",
+        "id",
+        "is_in",
+        "name",
+        "name_en",
+        "name_latin",
+        "name_ne",
+        "place",
+        "population",
+        "source",
+        "status"
+      ],
+      "source_crs": "EPSG:4326",
+      "geometry_types": {
+        "Point": 114,
+        "Polygon": 35
+      },
+      "source_resource": "https://production-raw-data-api.s3.amazonaws.com/ISO3/NPL_CORRIDOR/populated_places/hot_flood_npl_corridor_populated_places_osm.geojson"
+    }
+  },
+  "caveats": [
+    "Mapped status is source metadata, not field-verified operability.",
+    "Candidate graph connects coincident source vertices only; topology requires review.",
+    "No damage, population demand, travel speed or service suitability is inferred."
+  ]
+}

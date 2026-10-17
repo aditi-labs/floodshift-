@@ -1,0 +1,305 @@
+{
+  "schema_version": 2,
+  "world_version": 5,
+  "snapshot_id": "snap-5",
+  "scenario_id": "nepal_rasuwa_v1",
+  "phase": "disaster_active",
+  "simulation_stage": 1,
+  "branch_id": "main",
+  "token_inventory": {
+    "disaster_start": 0,
+    "person": 1,
+    "hospital": 0,
+    "food_shelter": 0,
+    "shelter": 0,
+    "bridge": 1
+  },
+  "budget_remaining_model": 2,
+  "narration_event": {
+    "event_type": "shelter_placed",
+    "model_only": true
+  },
+  "tokens": [
+    {
+      "id": "disaster_start",
+      "type": "disaster_start",
+      "board_uv": [
+        0.08,
+        0.9
+      ],
+      "site_id": "start_pad",
+      "vision_source": "manual",
+      "status": "accepted"
+    },
+    {
+      "id": "food_shelter",
+      "type": "food_shelter",
+      "board_uv": [
+        0.2,
+        0.6
+      ],
+      "site_id": "food_site_west",
+      "vision_source": "manual",
+      "status": "accepted"
+    },
+    {
+      "id": "hospital",
+      "type": "hospital",
+      "board_uv": [
+        0.2,
+        0.25
+      ],
+      "site_id": "medical_site_west",
+      "vision_source": "manual",
+      "status": "accepted"
+    },
+    {
+      "id": "person",
+      "type": "person",
+      "board_uv": [
+        0.75,
+        0.4
+      ],
+      "site_id": "people_east",
+      "vision_source": "manual",
+      "status": "accepted"
+    },
+    {
+      "id": "shelter",
+      "type": "shelter",
+      "board_uv": [
+        0.35,
+        0.75
+      ],
+      "site_id": "shelter_site_west",
+      "vision_source": "manual",
+      "status": "accepted"
+    }
+  ],
+  "edges": [
+    {
+      "id": "depot_west",
+      "from": "depot",
+      "to": "west",
+      "weight_min": 2,
+      "origin": "scenario_synthetic",
+      "source_refs": [],
+      "board_uv": [
+        [
+          0.1,
+          0.5
+        ],
+        [
+          0.35,
+          0.5
+        ]
+      ],
+      "blocked": false,
+      "reason": "model_open"
+    },
+    {
+      "id": "crossing_east_road",
+      "from": "west",
+      "to": "east",
+      "weight_min": 3,
+      "origin": "scenario_synthetic",
+      "source_refs": [],
+      "board_uv": [
+        [
+          0.35,
+          0.5
+        ],
+        [
+          0.6,
+          0.5
+        ]
+      ],
+      "blocked": true,
+      "reason": "illustrative_disruption"
+    },
+    {
+      "id": "east_village",
+      "from": "east",
+      "to": "village",
+      "weight_min": 2,
+      "origin": "scenario_synthetic",
+      "source_refs": [],
+      "board_uv": [
+        [
+          0.6,
+          0.5
+        ],
+        [
+          0.75,
+          0.4
+        ]
+      ],
+      "blocked": false,
+      "reason": "model_open"
+    },
+    {
+      "id": "medical_road",
+      "from": "west",
+      "to": "medical",
+      "weight_min": 2,
+      "origin": "scenario_synthetic",
+      "source_refs": [],
+      "board_uv": [
+        [
+          0.35,
+          0.5
+        ],
+        [
+          0.2,
+          0.25
+        ]
+      ],
+      "blocked": false,
+      "reason": "model_open"
+    },
+    {
+      "id": "food_road",
+      "from": "depot",
+      "to": "food",
+      "weight_min": 1,
+      "origin": "scenario_synthetic",
+      "source_refs": [],
+      "board_uv": [
+        [
+          0.1,
+          0.5
+        ],
+        [
+          0.2,
+          0.6
+        ]
+      ],
+      "blocked": false,
+      "reason": "model_open"
+    },
+    {
+      "id": "refuge_road",
+      "from": "west",
+      "to": "refuge",
+      "weight_min": 2,
+      "origin": "scenario_synthetic",
+      "source_refs": [],
+      "board_uv": [
+        [
+          0.35,
+          0.5
+        ],
+        [
+          0.35,
+          0.75
+        ]
+      ],
+      "blocked": false,
+      "reason": "model_open"
+    },
+    {
+      "id": "crossing_north_road",
+      "from": "west",
+      "to": "north",
+      "weight_min": 4,
+      "origin": "scenario_synthetic",
+      "source_refs": [],
+      "board_uv": [
+        [
+          0.35,
+          0.5
+        ],
+        [
+          0.65,
+          0.15
+        ]
+      ],
+      "blocked": true,
+      "reason": "illustrative_disruption"
+    }
+  ],
+  "facilities": [
+    {
+      "id": "food_shelter",
+      "type": "food_shelter",
+      "site_id": "food_site_west",
+      "node_id": "food",
+      "capacity_model": 10,
+      "used_capacity_model": 0,
+      "reachable": true,
+      "active": true
+    },
+    {
+      "id": "hospital",
+      "type": "hospital",
+      "site_id": "medical_site_west",
+      "node_id": "medical",
+      "capacity_model": 3,
+      "used_capacity_model": 0,
+      "reachable": true,
+      "active": true
+    },
+    {
+      "id": "shelter",
+      "type": "shelter",
+      "site_id": "shelter_site_west",
+      "node_id": "refuge",
+      "capacity_model": 10,
+      "used_capacity_model": 0,
+      "reachable": true,
+      "active": true
+    }
+  ],
+  "population_demand": [
+    {
+      "households_model": 1,
+      "people_model": 8,
+      "need_food": 8,
+      "need_medical": 2,
+      "need_refuge": 8,
+      "id": "people_east",
+      "token_id": "person",
+      "node_id": "village"
+    }
+  ],
+  "routes": [],
+  "metrics": {
+    "blocked_roads": 2,
+    "resource_spent": 3,
+    "unmet_medical_model": 2,
+    "people_reachable_for_medical": 0,
+    "unmet_food_model": 8,
+    "people_reachable_for_food": 0,
+    "unmet_refuge_model": 8,
+    "people_reachable_for_shelter": 0,
+    "reachable_communities": 0,
+    "road_access_fraction": 0.7142857142857143
+  },
+  "ghost_suggestion": {
+    "token_type": "bridge",
+    "site_id": "crossing_east",
+    "board_uv": [
+      0.475,
+      0.5
+    ],
+    "rotation_deg": 0,
+    "reason_code": "improves_multi_service_access",
+    "gain_model": 18,
+    "resource_cost": 2,
+    "score": 178,
+    "projected_metrics": {
+      "blocked_roads": 1,
+      "resource_spent": 5,
+      "unmet_medical_model": 0,
+      "people_reachable_for_medical": 8,
+      "unmet_food_model": 0,
+      "people_reachable_for_food": 8,
+      "unmet_refuge_model": 0,
+      "people_reachable_for_shelter": 8,
+      "reachable_communities": 1,
+      "road_access_fraction": 0.8571428571428571
+    }
+  },
+  "provenance_label": "Schematic educational fixture; geography, disruptions, capacities and people are illustrative, not historical measurements.",
+  "data_mode": "SCHEMATIC"
+}

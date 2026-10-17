@@ -1,0 +1,196 @@
+{
+  "nodes": [
+    {
+      "id": "depot",
+      "board_uv": [
+        0.1,
+        0.5
+      ],
+      "origin": "scenario_synthetic"
+    },
+    {
+      "id": "west",
+      "board_uv": [
+        0.35,
+        0.5
+      ],
+      "origin": "scenario_synthetic"
+    },
+    {
+      "id": "east",
+      "board_uv": [
+        0.6,
+        0.5
+      ],
+      "origin": "scenario_synthetic"
+    },
+    {
+      "id": "village",
+      "board_uv": [
+        0.75,
+        0.4
+      ],
+      "origin": "scenario_synthetic"
+    },
+    {
+      "id": "medical",
+      "board_uv": [
+        0.2,
+        0.25
+      ],
+      "origin": "scenario_synthetic"
+    },
+    {
+      "id": "food",
+      "board_uv": [
+        0.2,
+        0.6
+      ],
+      "origin": "scenario_synthetic"
+    },
+    {
+      "id": "refuge",
+      "board_uv": [
+        0.35,
+        0.75
+      ],
+      "origin": "scenario_synthetic"
+    },
+    {
+      "id": "north",
+      "board_uv": [
+        0.65,
+        0.15
+      ],
+      "origin": "scenario_synthetic"
+    }
+  ],
+  "edges": [
+    {
+      "id": "depot_west",
+      "from": "depot",
+      "to": "west",
+      "weight_min": 2,
+      "origin": "scenario_synthetic",
+      "source_refs": [],
+      "board_uv": [
+        [
+          0.1,
+          0.5
+        ],
+        [
+          0.35,
+          0.5
+        ]
+      ]
+    },
+    {
+      "id": "crossing_east_road",
+      "from": "west",
+      "to": "east",
+      "weight_min": 3,
+      "origin": "scenario_synthetic",
+      "source_refs": [],
+      "board_uv": [
+        [
+          0.35,
+          0.5
+        ],
+        [
+          0.6,
+          0.5
+        ]
+      ]
+    },
+    {
+      "id": "east_village",
+      "from": "east",
+      "to": "village",
+      "weight_min": 2,
+      "origin": "scenario_synthetic",
+      "source_refs": [],
+      "board_uv": [
+        [
+          0.6,
+          0.5
+        ],
+        [
+          0.75,
+          0.4
+        ]
+      ]
+    },
+    {
+      "id": "medical_road",
+      "from": "west",
+      "to": "medical",
+      "weight_min": 2,
+      "origin": "scenario_synthetic",
+      "source_refs": [],
+      "board_uv": [
+        [
+          0.35,
+          0.5
+        ],
+        [
+          0.2,
+          0.25
+        ]
+      ]
+    },
+    {
+      "id": "food_road",
+      "from": "depot",
+      "to": "food",
+      "weight_min": 1,
+      "origin": "scenario_synthetic",
+      "source_refs": [],
+      "board_uv": [
+        [
+          0.1,
+          0.5
+        ],
+        [
+          0.2,
+          0.6
+        ]
+      ]
+    },
+    {
+      "id": "refuge_road",
+      "from": "west",
+      "to": "refuge",
+      "weight_min": 2,
+      "origin": "scenario_synthetic",
+      "source_refs": [],
+      "board_uv": [
+        [
+          0.35,
+          0.5
+        ],
+        [
+          0.35,
+          0.75
+        ]
+      ]
+    },
+    {
+      "id": "crossing_north_road",
+      "from": "west",
+      "to": "north",
+      "weight_min": 4,
+      "origin": "scenario_synthetic",
+      "source_refs": [],
+      "board_uv": [
+        [
+          0.35,
+          0.5
+        ],
+        [
+          0.65,
+          0.15
+        ]
+      ]
+    }
+  ]
+}
