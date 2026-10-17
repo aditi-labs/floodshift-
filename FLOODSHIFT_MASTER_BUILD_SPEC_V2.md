@@ -1413,6 +1413,21 @@ A route given as an array of `(u,v)` points becomes a `<polyline points="...">`;
 
 **Important:** use React as the **renderer** of world state. Do not run a separate flood algorithm in browser and display its unverified results. The backend handles simulation; projected layer reflects backend responses.
 
+## As built — frontend (P2, branch `sky`)
+
+- **Stack:** React 18.3 + Vite 5.4 + TypeScript 5.6, plain SVG (no Konva). `cd frontend && npm install && npm run dev` (mock mode is the default; `VITE_USE_MOCKS=false` + `VITE_API_URL=http://localhost:8000` for P3's live API). `npm run build` typechecks.
+- **Routes:** `/` operator HUD, `/projector` fullscreen projector. Projector keys: `F` fullscreen, `M` overlay-only (black background, for the printed map) ↔ screen basemap, `C` calibration (arrows move, `[ ]` rotate, `- =` scale, `, .` x-scale, `; '` y-scale, shift ×10, `0` reset; saved in `localStorage`). `?mode=overlay` starts in overlay mode. In overlay mode the four corner fiducials (UV 0.04/0.96) are masked black.
+- **Operator keys:** `1–6` place START / person / hospital / food / shelter / bridge at the default pad, `G` suggest bridge, `Shift+R` reset, `Space` next scripted step (mock only). Click a pad on the mini-map to place its matching piece; right-click a token button to choose the pad. All of these send the same `WorldAction` the camera path sends.
+- **Mock mode:** `frontend/src/mocks/` holds a scripted playthrough of hand-authored fixture snapshots (ready → START → person → hospital → food → shelter → suggest → bridge). It does not simulate; off-script actions are rejected. Operator and projector tabs stay in sync over `BroadcastChannel`.
+- **Live mode** expects P3's routes from §17: `GET /world`, `GET /scenario`, `POST /action`, `POST /plan/suggest`, `POST /branch/save|load`, `GET /branch/compare`, `POST /narrate`, `WS /ws`. On every (re)connect the UI calls `GET /world`; after 10 s without a message the link badge shows `STALE`.
+- **Contract mirror:** `frontend/src/types/contracts.ts`. **P2 proposed snapshot extensions (optional fields, need P3/P4 agreement before `backend/contracts.py` adopts them):**
+  - `WorldSnapshot.service_routes: [{population_id, service: "medical"|"food"|"refuge", facility_id, reachable, edge_ids[]}]` — so the UI draws green/red service routes without running routing in React.
+  - `Facility.site_id` — where to draw the capacity badge.
+  - `GhostSuggestion.preview_edge_ids` — cyan dashed preview route.
+  - `POST /action` response `ActionResult = {action_id, accepted, reason, world_version}`; reason codes rendered: `invalid_site`, `invalid_crossing`, `resource_exhausted`, `already_started`, `start_first`, `stale_version`, `duplicate`, `no_supply_route`, `site_in_hazard`.
+  - `GET /scenario` returns static geometry `{scenario_id, name, data_label, rivers[[uv]], hazard_zones[{id, stage, polygon}], roads[{id, from, to, kind, path[[uv]]}], sites[{id, kind, label, board_uv, rotation_deg?}], labels[]}` (`frontend/src/types/scenario.ts`). Road `id`s must equal `WorldSnapshot.edges[].id`. Until it exists, the UI falls back to a **schematic** layout labelled `DATA=SCHEMATIC`.
+- **For P1's map print:** projector calibration crosses are drawn at board UV `(0.1,0.1) (0.9,0.1) (0.9,0.9) (0.1,0.9)`; please add matching thin registration crosses to `map_print.svg`.
+
 ---
 
 # 17. BACKEND API — ENOUGH TO CONNECT FOUR PEOPLE
@@ -1942,6 +1957,9 @@ Everything else—voice, physical dial, Tiger Data, helicopter, Seattle—comes 
 | **v2.0** | Perceptron remains core semantic recognition; marker ID only represents instance/pose | Meaningful sponsored model use | P3 | **Locked design, test model output** |
 | **v2.0** | 7:30–9 PM dedicated physical integration/debug; 9 PM+ submission proof | Prevent last-minute failure | All | **Locked schedule target** |
 | **v1.0 retained** | SVG projection, ghost bridge, Gemini explanation, optional Tiger, time dial, Seattle, branch compare | Preserve all original technical ambition with honest priority gates | All | Retained |
+| **v2.1** | Frontend built on branch `sky`: React 18 + Vite 5 + TS, SVG projector + operator HUD, scripted mock socket (see §16 "As built — frontend") | P2 lane P0 | P2 | **Shipped on `sky`, not merged** |
+| **v2.1** | P2 proposed optional snapshot fields `service_routes`, `Facility.site_id`, `GhostSuggestion.preview_edge_ids`; `ActionResult` response; `GET /scenario` geometry shape | UI must draw routes without computing them | P2 proposes, P3/P4 approve | **Proposed — needs P3/P4 sign-off** |
+| **v2.1** | Projector registration crosses at board UV 0.1/0.9 | Projector alignment against printed map | P2 → P1 | **Request to P1** |
 | Open | Printer, projector, tripod, exact board dimensions, object print success | Hardware-driven calibration | P1+P3 | TBD |
 | Open | Selected AOI / actual HDX resource filenames / local mapped bridge site | Must be verified from downloaded geodata | P4 | TBD |
 | Open | Model-specific SDK response shape, Perceptron challenge rubric | Verify live and sponsor booth | P3/P1 | TBD |
