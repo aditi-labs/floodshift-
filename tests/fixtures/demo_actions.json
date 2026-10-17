@@ -1,0 +1,75 @@
+{
+  "description": "Demo action sequence for FLOODSHIFT 3-minute presentation",
+  "scenario_id": "nepal_rasuwa_v1",
+  "actions": [
+    {
+      "step": 1,
+      "name": "Start Disaster",
+      "action": {
+        "action_id": "demo-start-001",
+        "type": "place_token",
+        "source": "physical_perceptron",
+        "token_type": "disaster_start",
+        "site_id": "start_pad",
+        "board_uv": [0.1, 0.1]
+      },
+      "expected_result": "Phase changes to disaster_active, hazard overlay appears"
+    },
+    {
+      "step": 2,
+      "name": "Place Person in Eastern Village",
+      "action": {
+        "action_id": "demo-person-001",
+        "type": "place_token",
+        "source": "physical_perceptron",
+        "token_type": "person",
+        "site_id": "people_east",
+        "board_uv": [0.72, 0.42]
+      },
+      "expected_result": "Person appears, needs food/medical/shelter - all blocked by river"
+    },
+    {
+      "step": 3,
+      "name": "Place Hospital on West Side",
+      "action": {
+        "action_id": "demo-hospital-001",
+        "type": "place_token",
+        "source": "physical_perceptron",
+        "token_type": "hospital",
+        "site_id": "medical_site_west",
+        "board_uv": [0.25, 0.55]
+      },
+      "expected_result": "Hospital appears but cannot reach eastern village"
+    },
+    {
+      "step": 4,
+      "name": "Request Bridge Suggestion",
+      "action": {
+        "action_id": "demo-suggest-001",
+        "type": "suggest",
+        "source": "manual"
+      },
+      "expected_result": "Ghost bridge appears at crossing_east"
+    },
+    {
+      "step": 5,
+      "name": "Place Bridge at Ghost Location",
+      "action": {
+        "action_id": "demo-bridge-001",
+        "type": "place_token",
+        "source": "physical_perceptron",
+        "token_type": "bridge",
+        "site_id": "crossing_east",
+        "board_uv": [0.47, 0.61]
+      },
+      "expected_result": "Bridge placed, crossing unblocked, route turns green, metrics improve"
+    }
+  ],
+  "demo_duration_seconds": 180,
+  "notes": [
+    "Pre-stage food_shelter and shelter tokens before demo",
+    "Have 2 person tokens ready",
+    "Practice ghost bridge placement alignment",
+    "Keep backup video ready"
+  ]
+}

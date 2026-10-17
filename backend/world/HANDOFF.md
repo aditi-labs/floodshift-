@@ -4,6 +4,11 @@ Owner for this workspace: **Person 4 only**, per `FLOODSHIFT_MASTER_BUILD_SPEC_V
 Work on Git branch **eashan**; pull before every push; never push to main.
 Simulation `branch_id="main"` is an in-memory counterfactual label, unrelated to Git.
 
+After merging P3's API foundation, `contracts/fixture_mock_world.json` preserves
+the mock API's ready-state reset fixture. `contracts/fixture_world.json` remains
+P4's authoritative staged demo. The API still selects MockWorldService until P3
+wires the real service; merging code does not itself complete that integration.
+
 ## Run without hardware or servers
 
 From repository root, Python 3.11+:
