@@ -30,6 +30,7 @@ Everything below lives in `scenarios/nepal_rasuwa_hot_v1/data/`:
 | `sites.json` | Nine distinct interaction pads, tolerances and source references |
 | `roads_board.json`, `waterways_board.json`, `bridges_board.json`, `settlements_board.json` | Mapped visual context in the same board UV frame |
 | `source_manifest.json` | Original URLs/hashes/license, coordinate transform, topology proof and modeling assumptions |
+| `map_print.svg`, `map_projection.svg` | Paired reference exports; same viewBox and approved numbered pads; physical calibration pending |
 | `validation_map.png` | Before/after QA figure; not calibrated projector or print artwork |
 
 Display **DATA=HOT_DERIVED**, with the snapshot's provenance label. The map uses
@@ -94,6 +95,7 @@ care, food/water and refuge pads; no claim of existing hospitals or safe sites.
 python -m scripts.geodata.build_hot_scenario
 python -m backend.world.demo --bundle scenarios/nepal_rasuwa_hot_v1 --write-fixtures
 python -m scripts.geodata.render_validation
+python -m scripts.geodata.export_board
 ```
 
 The builder needs NetworkX only; it consumes the committed, audited context under
@@ -107,10 +109,12 @@ in the source manifest.
 ## Next integration boundary
 
 P3 can load this service bundle and broadcast returned snapshots; P2 can render
-the matching fixture and curved routes; P1 can prepare square-frame print artwork.
+the matching fixture and curved routes; P1 can adopt the paired reference SVGs for square-frame print artwork.
 Those remain their owned tasks. Physical token fit and camera/projector alignment
 require their hardware measurements. P4 can adjust tolerances when those arrive.
 Durable local sessions and the optional Gemini adapter are now implemented; see
-[SESSION_HANDOFF.md](SESSION_HANDOFF.md). Live Gemini verification still requires
-local credentials. Tiger Data remains optional and unimplemented. Offline world
+[SESSION_HANDOFF.md](SESSION_HANDOFF.md). Live Gemini tools have been verified across runs; the latest full test was
+quota-limited (see `backend/narration/LIVE_VERIFICATION.md`). Tiger Data remains optional and unimplemented. Offline world
 simulation requires no cloud keys or hardware.
+
+See [PERSON4_ACCEPTANCE.md](PERSON4_ACCEPTANCE.md) for the complete module checklist and remaining integration boundaries.

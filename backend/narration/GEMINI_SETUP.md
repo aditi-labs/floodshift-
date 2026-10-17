@@ -38,8 +38,10 @@ python -m backend.narration.smoke --live \
 The report is Git-ignored. There are three questions: blocked access/bridge advice,
 before/after branch comparison, and rejecting an unsupported real-rescue claim.
 Each question uses at most three model requests and eight read-only tool calls.
-The smoke test allows a 10-second per-request timeout; the normal adapter defaults
-to 2.5 seconds. There is no unbounded retry loop.
+Live questions are spaced 60 seconds apart by default to accommodate low free-tier
+request quotas (`--interval-seconds` adjusts this). Missing local credentials do
+not trigger the pause. The smoke test allows a 10-second per-request timeout; the normal adapter defaults
+to the same 10 seconds after live latency checks. There is no unbounded retry loop.
 
 Exit `0` in live mode means all three questions returned LIVE answers with actual
 tool calls and no world mutation. A TEXT fallback returns exit `1`, so it cannot
@@ -60,6 +62,7 @@ that every sentence is correct.
 | `api_model_not_found` | Set `GEMINI_MODEL` to an available model in your account |
 | `api_quota_exceeded` | Check project quota in AI Studio; any billing decision is yours |
 | `api_timeout` / `api_unavailable` | Retry a bounded smoke test when connectivity/service recovers |
+| `incomplete_response` | Model stopped before completion; deterministic TEXT fallback is used |
 | `tool_call_missing` / `round_limit` | Tool calling did not complete; inspect adapter/model compatibility |
 
 Do not share SDK traceback dumps or screenshots containing a key. The adapter
@@ -73,3 +76,9 @@ the **backend process environment**; the CLI env-file loader is not automaticall
 used by the server. P2 reads `mode`, `text` and `world_version`, and should discard
 responses older than the displayed world. Neither P2 nor the browser receives the
 API key. Voice controls remain P2's responsibility.
+
+## Live verification record
+
+See [LIVE_VERIFICATION.md](LIVE_VERIFICATION.md): all three question behaviors
+have returned reviewed LIVE results across runs. The latest full run was limited
+by account quota and correctly failed overall; do not present it as all-green.

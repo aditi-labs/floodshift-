@@ -100,8 +100,8 @@ fields and token vocabulary are preserved.
 the specification, with an explicit dispatch allowlist. `narration_fallback.narrate`
 uses one current snapshot and labels outcomes illustrative. The optional
 `GeminiNarrator` adapter is now implemented with read-only function calling and
-TEXT fallback; see [SESSION_HANDOFF.md](SESSION_HANDOFF.md). Live API verification
-still requires local credentials. No key or cloud SDK is needed for offline mode.
+TEXT fallback; see [SESSION_HANDOFF.md](SESSION_HANDOFF.md). Live API tools have been verified across runs; the latest complete smoke run
+was quota-limited. See `backend/narration/LIVE_VERIFICATION.md`. No key or cloud SDK is needed for offline mode.
 
 ## Data status and reproduction
 

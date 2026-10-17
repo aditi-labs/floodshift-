@@ -6,7 +6,7 @@ import argparse
 from datetime import datetime, timezone
 import json
 from pathlib import Path
-from time import perf_counter
+from time import perf_counter, sleep
 
 from backend.narration.gemini_adapter import GeminiNarrator
 from backend.narration.local_config import ConfigError, read_config
@@ -15,10 +15,13 @@ from backend.world.demo import staged_world, place
 DEFAULT_BUNDLE = Path(__file__).resolve().parents[2] / 'scenarios/nepal_rasuwa_hot_v1'
 
 
-def run_smoke(narrator, bundle=DEFAULT_BUNDLE, live=False):
+def run_smoke(narrator, bundle=DEFAULT_BUNDLE, live=False, interval_seconds=0):
     world = staged_world(bundle)
     cases = []
     def ask(name, question):
+        if (live and cases and interval_seconds
+                and cases[-1]['reason'] not in {'missing_api_key', 'sdk_unavailable', 'client_unavailable'}):
+            sleep(interval_seconds)
         before = world.snapshot()
         start = perf_counter()
         result = narrator.answer(world, question)
@@ -51,13 +54,17 @@ def main(argv=None):
     parser.add_argument('--model', help='Override model ID')
     parser.add_argument('--report', type=Path, help='Save JSON evidence outside Git or to an ignored path')
     parser.add_argument('--timeout-ms', type=int, default=10000, help='Per-request timeout; max 10000')
+    parser.add_argument('--interval-seconds', type=int, default=60,
+                        help='Pause between live questions for free-tier quota (0–120; default 60)')
     args = parser.parse_args(argv)
     try:
+        if not 0 <= args.interval_seconds <= 120:
+            raise ValueError('invalid_interval')
         values = read_config(args.env_file) if args.env_file else {}
         narrator = GeminiNarrator(enabled=args.live, api_key=values.get('GEMINI_API_KEY'),
             model=args.model or values.get('GEMINI_MODEL') or None,
             timeout_ms=args.timeout_ms, require_tool_call=True)
-        report = run_smoke(narrator, args.bundle, args.live)
+        report = run_smoke(narrator, args.bundle, args.live, args.interval_seconds)
         encoded = json.dumps(report, indent=2, ensure_ascii=False, allow_nan=False) + '\n'
         if args.report:
             args.report.write_text(encoded, encoding='utf-8')

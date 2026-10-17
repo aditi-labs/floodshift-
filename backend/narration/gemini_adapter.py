@@ -70,7 +70,7 @@ def api_failure_reason(error):
 
 class GeminiNarrator:
     def __init__(self, *, client=None, model=None, api_key=None, enabled=True, max_rounds=3, max_tool_calls=8,
-                 timeout_ms=2500, require_tool_call=False):
+                 timeout_ms=10000, require_tool_call=False):
         if not 1 <= max_rounds <= 4 or not 1 <= max_tool_calls <= 12 or not 1 <= timeout_ms <= 10000:
             raise ValueError('invalid_narration_limits')
         self.client = client
@@ -120,7 +120,7 @@ class GeminiNarrator:
         summary['ghost_suggestion'] = snapshot['ghost_suggestion']
         contents = [{'role': 'user', 'parts': [{'text': json.dumps({
             'question': question, 'simulator_facts': compact_result(summary)}, ensure_ascii=False)}]}]
-        config = {'system_instruction': SYSTEM_INSTRUCTION, 'max_output_tokens': 512,
+        config = {'system_instruction': SYSTEM_INSTRUCTION, 'max_output_tokens': 2048,
                   'tools': [{'function_declarations': tool_declarations()}],
                   'automatic_function_calling': {'disable': True}}
         used = []
@@ -131,6 +131,9 @@ class GeminiNarrator:
                     round_config['tool_config'] = {'function_calling_config': {'mode': 'AUTO' if used else 'ANY'}}
                 response = client.models.generate_content(model=self.model, contents=contents, config=round_config)
                 candidates = getattr(response, 'candidates', None)
+                finish = getattr(candidates[0], 'finish_reason', None) if candidates else None
+                if finish is not None and str(getattr(finish, 'value', finish)) != 'STOP':
+                    return self._fallback(service, 'incomplete_response')
                 content = candidates[0].content if candidates else None
                 parts = getattr(content, 'parts', None) or []
                 calls = [p.function_call for p in parts if getattr(p, 'function_call', None)]
@@ -167,7 +170,7 @@ class GeminiNarrator:
                         reply['id'] = call.id
                     replies.append({'function_response': reply})
                 # Preserve the whole model turn, including any thought signatures.
-                contents.extend([content, {'role': 'tool', 'parts': replies}])
+                contents.extend([content, {'role': 'user', 'parts': replies}])
             return self._fallback(service, 'round_limit')
         except Exception as error:
             # Never echo SDK exception text: it may contain transport or key data.

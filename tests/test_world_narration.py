@@ -143,6 +143,7 @@ def test_real_google_sdk_function_call_wire_format_without_network():
     declarations = requests[0]['tools'][0]['functionDeclarations']
     assert {d['name'] for d in declarations} == set(TOOL_ARGUMENTS)
     reply = requests[1]['contents'][-1]['parts'][0]['functionResponse']
+    assert requests[1]['contents'][-1]['role'] == 'user'
     assert reply['response']['result']['unmet_food_model'] == 8
 
 
@@ -155,10 +156,18 @@ def test_owned_sdk_client_has_bounded_timeout_and_is_closed(monkeypatch):
     def factory(**options):
         assert options['api_key'] == 'test-only-key'
         http_options = types.HttpOptions(**options['http_options'])
-        assert http_options.timeout == 2500
+        assert http_options.timeout == 10000
         assert http_options.retry_options.attempts == 1
         return client
     monkeypatch.setenv('GEMINI_API_KEY', 'test-only-key')
     monkeypatch.setattr(genai, 'Client', factory)
     result = GeminiNarrator().answer(staged_world(), 'Explain')
     assert result['mode'] == 'LIVE' and closed == [True]
+
+
+def test_truncated_generation_is_not_presented_as_live():
+    reply = response(text='The bridge should be placed at')
+    reply.candidates[0].finish_reason = 'MAX_TOKENS'
+    result = GeminiNarrator(client=FakeClient([reply])).answer(staged_world(), 'Which bridge?')
+    assert result['mode'] == 'TEXT'
+    assert result['reason'] == 'incomplete_response'

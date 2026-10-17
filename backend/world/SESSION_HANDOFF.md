@@ -76,10 +76,13 @@ adapter discards that answer and returns a fresh state-derived TEXT summary.
 P2 should still ignore a narration response older than its currently displayed
 world version, because a new action can arrive after any response is returned.
 
-Defaults: at most three model requests, eight tool calls, 2.5-second HTTP timeout
+Defaults: at most three model requests, eight tool calls, 10-second HTTP timeout
 per request and one HTTP attempt per request. SDK errors, missing keys/dependencies,
 empty/overlong responses and tool-budget exhaustion use the offline fallback.
 Errors returned to clients contain stable reason codes, not SDK exception text.
+Each generation allows at most 2,048 output tokens (including model reasoning);
+the displayed answer remains capped at 90 words. Non-STOP completion reasons
+fall back to TEXT, so a token-limited fragment is never accepted as a live answer.
 The adapter sends the typed question and compact model facts to Gemini; it does
 not upload camera frames, raw GIS downloads, event logs or credentials as prompts.
 
@@ -111,8 +114,9 @@ world answers and bounded request loops.
 The API endpoint/schema handshake remains P3's work; P2/P1 still own the matching
 projection/print SVGs and hardware registration. Person 4 can fix simulation or
 tolerance issues revealed by their integration. Tiger Data remains optional and
-unimplemented. Live Gemini verification awaits a locally configured key and an
-explicit smoke run against the selected account/model.
+unimplemented. Live Gemini calls and read-only tools have been verified; the latest full smoke
+run was quota-limited. See [LIVE_VERIFICATION.md](../narration/LIVE_VERIFICATION.md)
+for reviewed results and the remaining account-quota check.
 
 Implementation references checked against the official
 [Google Gen AI Python SDK documentation](https://googleapis.github.io/python-genai/)
