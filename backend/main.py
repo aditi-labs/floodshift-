@@ -17,6 +17,15 @@ import os
 import uuid
 from datetime import datetime
 from contextlib import asynccontextmanager
+from pathlib import Path
+
+# Load environment variables from .env
+try:
+    from dotenv import load_dotenv
+    env_path = Path(__file__).resolve().parents[1] / '.env'
+    load_dotenv(env_path)
+except ImportError:
+    pass  # dotenv not installed, use system env vars
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -25,7 +34,7 @@ from backend.contracts import (
     WorldSnapshot, WorldAction, ActionResult, ActionType, TokenState,
     WorldMetrics, GhostSuggestion, EdgeState, Phase, TokenType, VisionSource,
     HealthResponse, SuggestRequest, NarrateRequest, NarrateResponse,
-    BranchSaveRequest, BranchLoadRequest, WSEvent
+    BranchSaveRequest, BranchLoadRequest, WSEvent, RiskZone, RiskLevel
 )
 
 # Import real WorldService from P4, fallback to mock
@@ -114,6 +123,42 @@ def _dict_to_world_snapshot(data: dict) -> WorldSnapshot:
     else:
         phase = phase_val
 
+    # Calculate risk zones with token protection
+    risk_zones = []
+    try:
+        from backend.planning.prevention import get_risk_zones_for_snapshot
+        # Get bundle from world_service if available
+        bundle = {}
+        if world_service:
+            if hasattr(world_service, 'scenario'):
+                bundle = world_service.scenario()
+            elif hasattr(world_service, '_bundle'):
+                bundle = world_service._bundle
+
+        # Build state dict for risk calculation
+        state = {
+            'tokens': [t.model_dump() if hasattr(t, 'model_dump') else t for t in tokens],
+            'phase': phase_val
+        }
+
+        zone_data = get_risk_zones_for_snapshot(bundle, state, mode='relief')
+        for z in zone_data:
+            risk_zones.append(RiskZone(
+                zone_id=z.get('zone_id', ''),
+                node_id=z.get('node_id', ''),
+                board_uv_center=tuple(z.get('board_uv_center', (0.5, 0.5))),
+                radius_uv=z.get('radius_uv', 0.08),
+                risk_level=RiskLevel(z.get('risk_level', 'medium')),
+                flood_probability=z.get('flood_probability', 0.5),
+                base_probability=z.get('base_probability', 0.5),
+                population_exposed=z.get('population_exposed', 0),
+                elevation_m=z.get('elevation_m'),
+                color=z.get('color', '#FFCC00'),
+                is_protected=z.get('is_protected', False)
+            ))
+    except Exception as e:
+        print(f"Warning: Could not calculate risk zones: {e}")
+
     return WorldSnapshot(
         schema_version=data.get('schema_version', 2),
         world_version=data.get('world_version', 1),
@@ -129,7 +174,8 @@ def _dict_to_world_snapshot(data: dict) -> WorldSnapshot:
         metrics=metrics,
         ghost_suggestion=ghost,
         narration_event=None,
-        provenance_label=data.get('provenance_label', 'Educational scenario')
+        provenance_label=data.get('provenance_label', 'Educational scenario'),
+        risk_zones=risk_zones
     )
 
 
@@ -257,12 +303,22 @@ async def health():
     if world_service:
         raw_snapshot = world_service.snapshot()
         version = raw_snapshot.get('world_version', 1) if isinstance(raw_snapshot, dict) else raw_snapshot.world_version
+
+    # Check Gemini status
+    gemini_status = "not_configured"
+    try:
+        from backend.ai.gemini_adapter import get_gemini
+        gemini = get_gemini()
+        gemini_status = gemini.status
+    except Exception:
+        pass
+
     return HealthResponse(
         status="ok",
         world_version=version,
         vision_mode="mock" if USE_MOCK else "live",
         perceptron_status="not_connected",
-        gemini_status="not_connected"
+        gemini_status=gemini_status
     )
 
 
@@ -364,9 +420,8 @@ async def reset_world():
 @app.post("/narrate", response_model=NarrateResponse)
 async def narrate(request: NarrateRequest):
     """
-    Get AI narration for current state.
-    Uses Gemini with read-only world tools (P4 implements tools).
-    For now returns mock response.
+    Get AI narration for current state using Gemini.
+    Answers are grounded in actual simulation data.
     """
     if not world_service:
         raise HTTPException(status_code=503, detail="World service not initialized")
@@ -374,10 +429,23 @@ async def narrate(request: NarrateRequest):
     raw_snapshot = world_service.snapshot()
     if isinstance(raw_snapshot, dict):
         snapshot = _dict_to_world_snapshot(raw_snapshot)
+        world_state = raw_snapshot
     else:
         snapshot = raw_snapshot
+        world_state = snapshot.model_dump()
 
-    # Mock narration - P4 will implement real Gemini integration
+    # Try Gemini first
+    try:
+        from backend.ai.gemini_adapter import get_gemini
+        gemini = get_gemini()
+        if gemini.is_ready:
+            mode = world_state.get('mode', 'relief')
+            answer = gemini.answer_question(request.question, world_state, mode)
+            return NarrateResponse(answer=answer, grounded_in_version=snapshot.world_version)
+    except Exception:
+        pass  # Fall back to rule-based
+
+    # Fallback: rule-based responses
     blocked_count = snapshot.metrics.blocked_roads
     phase = snapshot.phase
 
@@ -393,8 +461,10 @@ async def narrate(request: NarrateRequest):
             answer = f"I recommend placing a temporary bridge at {site_id}. This would restore multi-service access to isolated communities."
         else:
             answer = "No bridge placement is currently needed - all crossings are operational."
+    elif "prevention" in request.question.lower() or "prepare" in request.question.lower():
+        answer = "Prevention mode allows you to plan evacuation routes and pre-position resources before disaster strikes. Place shelters, reinforce bridges, and stock supplies to protect more lives."
     else:
-        answer = f"The scenario is in '{phase.value}' phase with {blocked_count} blocked road(s). This is an educational simulation based on HOT Nepal 2026 mapping data."
+        answer = f"The scenario is in '{phase.value}' phase with {blocked_count} blocked road(s). This simulation uses real terrain data from Rasuwa, Nepal with 1,191 people across 8 communities."
 
     return NarrateResponse(
         answer=answer,
@@ -482,3 +552,187 @@ async def perception_status():
         "calibration": "not_calibrated",
         "mode": "mock"
     }
+
+
+# =============================================================================
+# PREVENTION MODE ENDPOINTS
+# =============================================================================
+
+# Lazy load prevention module (optional feature)
+_prevention_module = None
+_risk_data = None
+
+
+def _get_prevention():
+    """Lazy load prevention planning module."""
+    global _prevention_module, _risk_data
+    if _prevention_module is None:
+        try:
+            from backend.planning import prevention as prev_mod
+            _prevention_module = prev_mod
+            _risk_data = prev_mod.load_risk_data()
+        except ImportError:
+            _prevention_module = False
+    return _prevention_module, _risk_data
+
+
+@app.get("/prevention/risk-map")
+async def get_risk_map():
+    """
+    Get risk overlay data for projection.
+    Returns risk zones with flood probability and population exposure.
+    """
+    if not world_service:
+        raise HTTPException(status_code=503, detail="World service not initialized")
+
+    prevention, risk_data = _get_prevention()
+    if not prevention or not risk_data:
+        return {"available": False, "risk_zones": [], "message": "Prevention mode not configured"}
+
+    # Get bundle (scenario data)
+    if hasattr(world_service, 'scenario'):
+        bundle = world_service.scenario()
+    elif hasattr(world_service, '_bundle'):
+        bundle = world_service._bundle
+    else:
+        bundle = {}
+
+    zones = prevention.get_risk_zones(bundle, risk_data)
+
+    return {
+        "available": True,
+        "risk_zones": zones,
+        "scenarios": list(risk_data.get('disaster_scenarios', {}).keys())
+    }
+
+
+@app.post("/prevention/analyze")
+async def analyze_prevention(scenario: str = "category_2"):
+    """
+    Run what-if scenario analysis.
+    Shows vulnerability and effectiveness of current prevention measures.
+    """
+    if not world_service:
+        raise HTTPException(status_code=503, detail="World service not initialized")
+
+    prevention, risk_data = _get_prevention()
+    if not prevention or not risk_data:
+        raise HTTPException(status_code=501, detail="Prevention mode not available")
+
+    # Get bundle (scenario data) - handle both mock and real services
+    if hasattr(world_service, 'scenario'):
+        bundle = world_service.scenario()
+    elif hasattr(world_service, '_bundle'):
+        bundle = world_service._bundle
+    else:
+        bundle = risk_data  # Fallback to risk data structure
+
+    # Get current state
+    raw_snapshot = world_service.snapshot()
+    if isinstance(raw_snapshot, dict):
+        state = {'tokens': {t.get('id', str(i)): t for i, t in enumerate(raw_snapshot.get('tokens', []))}}
+    else:
+        state = {'tokens': {}}
+
+    vulnerability = prevention.calculate_vulnerability_score(bundle, state, risk_data)
+    lives_at_risk = prevention.calculate_lives_at_risk(bundle, risk_data, scenario)
+    effectiveness = prevention.calculate_prevention_effectiveness(bundle, state, risk_data, scenario)
+
+    return {
+        "scenario": scenario,
+        "vulnerability_score": round(vulnerability, 2),
+        "lives_at_risk": lives_at_risk,
+        "lives_protected": effectiveness['lives_protected'],
+        "evacuation_routes_secured": effectiveness.get('evacuation_routes_secured', 0),
+        "shelters_ready": effectiveness.get('shelters_ready', 0),
+        "effectiveness_score": effectiveness['effectiveness_score']
+    }
+
+
+@app.get("/prevention/suggestions")
+async def get_prevention_suggestions(scenario: str = "category_2"):
+    """
+    Get prevention placement recommendations.
+    Returns optimal next prevention action based on risk analysis.
+    """
+    if not world_service:
+        raise HTTPException(status_code=503, detail="World service not initialized")
+
+    prevention, risk_data = _get_prevention()
+    if not prevention or not risk_data:
+        raise HTTPException(status_code=501, detail="Prevention mode not available")
+
+    # Get bundle and state
+    if hasattr(world_service, 'scenario'):
+        bundle = world_service.scenario()
+    elif hasattr(world_service, '_bundle'):
+        bundle = world_service._bundle
+    else:
+        bundle = risk_data
+
+    raw_snapshot = world_service.snapshot()
+    if isinstance(raw_snapshot, dict):
+        state = {'tokens': {t.get('id', str(i)): t for i, t in enumerate(raw_snapshot.get('tokens', []))}}
+    else:
+        state = {'tokens': {}}
+
+    suggestion = prevention.best_prevention_suggestion(bundle, state, risk_data, scenario)
+
+    if suggestion:
+        return {
+            "has_suggestion": True,
+            "suggestion": suggestion,
+            "scenario": scenario
+        }
+    else:
+        return {
+            "has_suggestion": False,
+            "suggestion": None,
+            "message": "All prevention measures already in place or no high-impact options available"
+        }
+
+
+@app.post("/prevention/compare")
+async def compare_prevention_outcomes(scenario: str = "default"):
+    """
+    Compare prevention vs no-prevention outcomes.
+    Uses Gemini for intelligent analysis when available.
+    """
+    if not world_service:
+        raise HTTPException(status_code=503, detail="World service not initialized")
+
+    prevention, risk_data = _get_prevention()
+    if not prevention or not risk_data:
+        raise HTTPException(status_code=501, detail="Prevention mode not available")
+
+    # Get bundle and state
+    if hasattr(world_service, 'scenario'):
+        bundle = world_service.scenario()
+    elif hasattr(world_service, '_bundle'):
+        bundle = world_service._bundle
+    else:
+        bundle = risk_data
+
+    raw_snapshot = world_service.snapshot()
+    if isinstance(raw_snapshot, dict):
+        state = {'tokens': {t.get('id', str(i)): t for i, t in enumerate(raw_snapshot.get('tokens', []))}}
+    else:
+        state = {'tokens': {}}
+
+    comparison = prevention.compare_outcomes(bundle, state, risk_data, scenario)
+
+    # Add Gemini analysis if available
+    try:
+        from backend.ai.gemini_adapter import get_gemini
+        gemini = get_gemini()
+        if gemini.is_ready:
+            ai_analysis = gemini.compare_outcomes(
+                comparison['without_prevention'],
+                comparison['with_prevention'],
+                comparison.get('prevention_investment', 0)
+            )
+            comparison['ai_analysis'] = ai_analysis
+    except Exception:
+        pass
+
+    return comparison

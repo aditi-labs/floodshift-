@@ -97,6 +97,29 @@ button { font: inherit; }
 .with-basemap .banner-cut { fill: #b91c1c; }
 .with-basemap .banner-ok { fill: #15803d; }
 
+/* ───────────── Risk Zones ───────────── */
+.layer-risk-zones { pointer-events: none; }
+.risk-zone circle { transition: fill 0.6s ease-out, stroke 0.6s ease-out, fill-opacity 0.6s ease-out; }
+.risk-zone.protected circle { filter: drop-shadow(0 0 8px #00CC00); }
+.protection-ring { animation: protection-pulse 2s ease-in-out infinite; }
+.risk-label { font-weight: 700; paint-order: stroke; stroke: rgba(0, 0, 0, 0.7); stroke-width: 2; }
+.with-basemap .risk-label { stroke: rgba(255, 255, 255, 0.7); }
+
+/* Risk level colors (fallback if inline style not applied) */
+.risk-critical circle { fill: #FF0000; stroke: #FF0000; }
+.risk-high circle { fill: #FF6600; stroke: #FF6600; }
+.risk-medium circle { fill: #FFCC00; stroke: #FFCC00; }
+.risk-low circle { fill: #66CC66; stroke: #66CC66; }
+
+@keyframes protection-pulse {
+  0%, 100% { stroke-dashoffset: 0; opacity: 0.8; }
+  50% { stroke-dashoffset: 24; opacity: 1; }
+}
+@keyframes risk-improve {
+  0% { transform: scale(1.2); }
+  100% { transform: scale(1); }
+}
+
 @keyframes dash-march { to { stroke-dashoffset: -36; } }
 @keyframes hazard-pulse { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
 @keyframes ghost-breathe { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }

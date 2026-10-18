@@ -115,6 +115,23 @@ export interface ServiceRoute {
   edge_ids: string[];
 }
 
+export type RiskLevel = "low" | "medium" | "high" | "critical";
+
+/** Risk zone for prevention/relief mode overlay. Colors adapt as tokens provide protection. */
+export interface RiskZone {
+  zone_id: string;
+  node_id: string;
+  board_uv_center: UV;
+  radius_uv: number;
+  risk_level: RiskLevel;
+  flood_probability: number;
+  base_probability: number;
+  population_exposed: number;
+  elevation_m?: number | null;
+  color: string;  // Hex color for rendering
+  is_protected: boolean;
+}
+
 export interface WorldSnapshot {
   schema_version: number;
   world_version: number;
@@ -133,6 +150,9 @@ export interface WorldSnapshot {
   provenance_label: string;
   /** PROPOSED (P2) */
   service_routes?: ServiceRoute[];
+  /** Risk zones with colors that adapt as tokens provide protection */
+  risk_zones?: RiskZone[];
+  mode?: "prevention" | "relief";
 }
 
 export type ActionType =
