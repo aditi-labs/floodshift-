@@ -10,7 +10,22 @@ from backend.simulation.population_positions import snap_to_road
 ALLOWED = {'disaster_start': 'control_start_pad', 'person': 'population_node',
            'hospital': 'medical_site', 'food_shelter': 'food_site',
            'shelter': 'shelter_site', 'bridge': 'bridge_crossing'}
-SOURCES = {'manual', 'physical_perceptron', 'replay'}
+SOURCES = {'manual', 'physical_perceptron', 'physical_local_cv', 'replay'}
+VISION_SOURCE = {'physical_perceptron': 'perceptron', 'physical_local_cv': 'local_cv'}
+
+
+def resolve_site(bundle, token_type, board_uv):
+    """Nearest approved pad of the kind this piece may use, or None if none is in reach.
+
+    Camera placements carry only board_uv; the UI sends a site_id as well. Both end
+    up here, so a physical piece and a mouse click obey identical tolerances.
+    """
+    kind = ALLOWED.get(token_type)
+    candidates = [s for s in bundle['sites'] if s['kind'] == kind and valid_uv(board_uv)]
+    if not candidates:
+        return None
+    site = min(candidates, key=lambda s: (dist(board_uv, s['board_uv']), s['id']))
+    return site if dist(board_uv, site['board_uv']) <= site['tolerance_uv'] else None
 
 
 class RuleError(ValueError):
@@ -65,7 +80,11 @@ def reduce_action(bundle, original, action):
         require(old is None, 'token_already_placed')
     token_type = action.get('token_type', old['type'] if old else None)
     require(isinstance(token_type, str) and token_type in ALLOWED, 'unsupported_token')
-    site = next((s for s in bundle['sites'] if s['id'] == action.get('site_id')), None)
+    if action.get('site_id') is None and token_type in ALLOWED and valid_uv(action.get('board_uv')):
+        site = resolve_site(bundle, token_type, action['board_uv'])
+        require(site is not None or token_type == 'person', 'outside_site')
+    else:
+        site = next((s for s in bundle['sites'] if s['id'] == action.get('site_id')), None)
     road_snap = None
     if token_type == 'person' and 'routing_policy' in bundle:
         require(valid_uv(action.get('board_uv')), 'invalid_board_uv')
@@ -100,7 +119,7 @@ def reduce_action(bundle, original, action):
         state['ghost_goal'] = None
     state['tokens'][token_id] = {'id': token_id, 'type': token_type,
         'board_uv': list(action['board_uv']), 'site_id': site['id'],
-        'vision_source': {'physical_perceptron': 'perceptron'}.get(action['source'], action['source']),
+        'vision_source': VISION_SOURCE.get(action['source'], action['source']),
         'status': 'accepted'}
     if road_snap is not None:
         state['tokens'][token_id]['road_snap'] = road_snap

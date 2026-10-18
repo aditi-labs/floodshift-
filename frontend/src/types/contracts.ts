@@ -39,7 +39,8 @@ export type Phase = "prevention" | "ready" | "disaster_active";
 
 export type UV = [number, number];
 
-export type VisionSource = "perceptron" | "replay" | "manual";
+/** local_cv = OpenCV colour+shape rule for the printed bridge; shown as LOCAL_CV, never as Perceptron. */
+export type VisionSource = "perceptron" | "local_cv" | "replay" | "manual";
 export type TokenStatus = "accepted" | "pending" | "rejected";
 
 /** backend TokenState. With markerless tracking (spec §07b) ids look like "tracked-<n>". */
@@ -187,7 +188,7 @@ export type ActionType =
   | "branch"
   | "compare";
 
-export type ActionSource = "physical_perceptron" | "manual" | "replay";
+export type ActionSource = "physical_perceptron" | "physical_local_cv" | "manual" | "replay";
 
 export interface WorldAction {
   action_id: string;
@@ -269,7 +270,7 @@ export type Envelope =
   | { type: "server.hello"; seq?: number; sent_at?: string; payload: { status: string } };
 
 export interface ModeBadges {
-  VISION: "LIVE_PERCEPTRON" | "REPLAY" | "MANUAL";
+  VISION: "LIVE_PERCEPTRON" | "LOCAL_CV" | "REPLAY" | "MANUAL";
   PROJECTOR: "CALIBRATED" | "SCREEN";
   GEMINI: "LIVE" | "TEXT" | "OFF";
   DATA: "HOT_DERIVED" | "SCHEMATIC";

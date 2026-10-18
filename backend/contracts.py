@@ -52,6 +52,7 @@ class VisionStatus(str, Enum):
 
 class VisionSource(str, Enum):
     PERCEPTRON = "perceptron"
+    LOCAL_CV = "local_cv"  # OpenCV colour+shape rule (backend/perception/bridge_detector.py), not a model call
     MANUAL = "manual"
     REPLAY = "replay"
 
@@ -74,9 +75,20 @@ class ObjectObservation(BaseModel):
     perceptron_box_1000: list[int] | None = None  # [x1, y1, x2, y2] in 0-1000 coords
     board_uv: tuple[float, float]  # normalized (0,0) top-left to (1,1) bottom-right
     rotation_deg: float = 0.0
-    stable_ms: int  # how long the object has been stationary
+    stable_ms: int = 0  # how long the object has been stationary
     vision_status: VisionStatus
-    frame_provenance: str  # e.g. "local:fixtures/frame224.png"
+    frame_provenance: str = "unknown"  # e.g. "local:fixtures/frame224.png"
+    latency_ms: int | None = None  # classifier round trip, for the operator HUD
+
+
+class ObservationResult(BaseModel):
+    """Response from POST /perception/observe: what the gateway did with an observation."""
+    accepted: bool
+    action_id: str | None = None
+    world_version: int
+    rejection_reason: str | None = None
+    site_id: str | None = None  # pad the reducer resolved from board_uv
+    applied: bool = False  # false when the observation was only broadcast (not confirmed)
 
 
 # =============================================================================
@@ -100,7 +112,7 @@ class WorldAction(BaseModel):
     """
     action_id: str
     type: ActionType
-    source: Literal["physical_perceptron", "manual", "replay"]
+    source: Literal["physical_perceptron", "physical_local_cv", "manual", "replay"]
     token_id: str | None = None
     token_type: TokenType | None = None
     site_id: str | None = None

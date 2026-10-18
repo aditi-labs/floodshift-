@@ -84,7 +84,11 @@ export function OperatorPanel({ world }: { world: WorldHook }) {
 
   const m = snapshot.metrics;
   const people = snapshot.population_demand.reduce((n, d) => n + d.people_model, 0);
-  const visionMode = transportKind === "mock" ? "REPLAY" : observations.some((o) => o.class_source === "perceptron") ? "LIVE_PERCEPTRON" : "MANUAL";
+  const visionMode =
+    transportKind === "mock" ? "REPLAY"
+    : observations.some((o) => o.class_source === "perceptron") ? "LIVE_PERCEPTRON"
+    : observations.some((o) => o.class_source === "local_cv") ? "LOCAL_CV"
+    : "MANUAL";
   const connTone = status === "live" ? "ok" : status === "mock" ? "info" : status === "stale" ? "warn" : "bad";
 
   const onSiteClick = (siteId: string) => {

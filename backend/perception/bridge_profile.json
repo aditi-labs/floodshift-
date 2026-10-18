@@ -1,0 +1,31 @@
+{
+  "hue_min": 17,
+  "hue_max": 36,
+  "sat_min": 58,
+  "val_min": 59,
+  "min_area_fraction": 0.0004,
+  "max_area_fraction": 0.25,
+  "aspect_min": 1.31,
+  "aspect_max": 2.84,
+  "rungs_min": 4,
+  "rungs_max": 13,
+  "fitted_from": [
+    "hardware/tokens/bridge/photo_top.jpg",
+    "tests/fixtures/board_frames/bridge_camera_1280x720.jpg"
+  ],
+  "fitted_on": "2026-10-18",
+  "observed": {
+    "hue_range": [
+      24.0,
+      28.0
+    ],
+    "aspect": [
+      1.74,
+      1.78
+    ],
+    "rungs": [
+      6,
+      7
+    ]
+  }
+}

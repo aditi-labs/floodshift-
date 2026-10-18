@@ -77,6 +77,21 @@ serializes commits with a lock, but gateway broadcast ordering is P3's responsib
 - `scenario_geometry()` serves `GET /scenario`: roads (ids = edge ids), sites with labels
   and tolerances, rivers, settlement labels, flood footprints, `aspect_ratio`.
 
+## Camera path (v2.4)
+
+- `reduce_action` resolves `site_id` from `board_uv` when the action has none: nearest
+  approved pad of the piece's kind within that pad's `tolerance_uv`, else `outside_site`.
+- `POST /perception/observe` (gateway) accepts an `ObjectObservation`, broadcasts it as
+  `vision.status`, builds the `WorldAction` with the current version under the lock, and
+  broadcasts the snapshot. `class_source` maps to action source: `perceptron` →
+  `physical_perceptron`, `local_cv` → `physical_local_cv` (token `vision_source` keeps it).
+- Printed-bridge recognition: `scripts/run_live_demo.py` uses
+  `PerceptronAdapter.classify_frame`, which calls Perceptron when `PERCEPTRON_API_KEY` and
+  the `perceptron` SDK exist, cross-checks bridge boxes with
+  `backend/perception/bridge_detector.py`, and otherwise classifies **only the bridge** with
+  that local colour+shape rule (shown as `LOCAL_CV`). Re-fit after new photos:
+  `python scripts/calibrate_bridge_detector.py hardware/tokens/bridge/photo_top.jpg new1.jpg ...`
+
 ## Person 2 integration
 
 Use `contracts/fixture_world.json` and `data/fixture_after_bridge.json` to show before/

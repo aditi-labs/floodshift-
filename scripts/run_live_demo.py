@@ -30,6 +30,8 @@ import cv2
 import numpy as np
 import httpx
 
+from backend.perception.perceptron_adapter import PerceptronAdapter
+
 # =============================================================================
 # CONFIGURATION
 # =============================================================================
@@ -53,6 +55,9 @@ CORNER_MARKERS = {
 STABILITY_FRAMES = 20  # Frames object must be stable before detection
 PERCEPTRON_COOLDOWN = 2.0  # Seconds between API calls
 MIN_OBJECT_AREA = 1000  # Minimum contour area to consider
+BACKGROUND_WARMUP_FRAMES = 30  # Learn the empty board for ~1 s, then freeze the model...
+SETTLED_LEARNING_RATE = 0.0002  # ...so a motionless piece stays foreground for minutes, not 12 frames
+MISSING_FRAMES_GRACE = 15  # Frames a tracked piece may be unmatched (hand occlusion) before it is dropped
 
 # =============================================================================
 # SIMPLE OBJECT TRACKER
@@ -67,11 +72,15 @@ class SimpleTracker:
         self.bg_subtractor = cv2.createBackgroundSubtractorMOG2(
             history=500, varThreshold=50, detectShadows=False
         )
+        self.frames_seen = 0
 
     def update(self, frame):
         """Update tracker with new frame, return list of stable unidentified objects."""
-        # Apply background subtraction
-        fg_mask = self.bg_subtractor.apply(frame)
+        # Apply background subtraction. MOG2's automatic rate absorbs a static piece within
+        # ~12 frames during the first 500 frames, so pieces placed early were never stable.
+        self.frames_seen += 1
+        rate = -1 if self.frames_seen <= BACKGROUND_WARMUP_FRAMES else SETTLED_LEARNING_RATE
+        fg_mask = self.bg_subtractor.apply(frame, learningRate=rate)
 
         # Clean up mask
         kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
@@ -110,6 +119,7 @@ class SimpleTracker:
                 # Update existing object
                 self.tracked_objects[best_id]['center'] = (cx, cy)
                 self.tracked_objects[best_id]['frames_stable'] += 1
+                self.tracked_objects[best_id]['missing'] = 0
                 matched_ids.add(best_id)
             else:
                 # New object
@@ -118,14 +128,17 @@ class SimpleTracker:
                     'frames_stable': 1,
                     'identified': False,
                     'token_type': None,
-                    'sent_to_backend': False
+                    'sent_to_backend': False,
+                    'missing': 0,
                 }
                 self.next_id += 1
 
-        # Remove lost objects
-        lost_ids = [oid for oid in self.tracked_objects if oid not in matched_ids]
-        for oid in lost_ids:
-            del self.tracked_objects[oid]
+        # Drop objects only after a run of unmatched frames (a hand passing over a piece
+        # must not reset identification or trigger a second deployment).
+        for oid in [oid for oid in self.tracked_objects if oid not in matched_ids]:
+            self.tracked_objects[oid]['missing'] += 1
+            if self.tracked_objects[oid]['missing'] > MISSING_FRAMES_GRACE:
+                del self.tracked_objects[oid]
 
         # Return stable unidentified objects
         return [
@@ -158,7 +171,7 @@ class SimpleTracker:
 
             if obj['identified']:
                 color = (0, 255, 0)  # Green for identified
-                label = f"{obj['token_type']}"
+                label = f"{obj['token_type']} [{obj.get('class_source', '?')}]"
                 if obj['sent_to_backend']:
                     label += " [SENT]"
             else:
@@ -266,105 +279,58 @@ def pixel_to_board(homography, px_x, px_y, frame_width, frame_height):
 # PERCEPTRON DETECTION
 # =============================================================================
 
-def detect_with_perceptron(frame, frame_path=None):
-    """Use Perceptron AI to identify objects in frame."""
+CLASSIFIER = PerceptronAdapter(mock_mode=False)  # Perceptron when configured, local bridge rule otherwise
+
+
+def classify_frame(frame):
+    """Identify pieces in the frame. Returns dicts with token_type, center, mention, class_source."""
     try:
-        import perceptron
-
-        # Save frame to temp file if not provided
-        if frame_path is None:
-            with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as f:
-                frame_path = f.name
-                cv2.imwrite(frame_path, frame)
-
-        # Call Perceptron
-        response = perceptron.detect(
-            frame_path,
-            classes=[
-                "miniature emergency bridge span structure",
-                "miniature medical field hospital building with cross symbol",
-                "miniature food and water distribution station",
-                "miniature sleeping shelter tent",
-                "miniature orange storm warning marker",
-                "miniature human figurine"
-            ],
-            model="perceptron-mk1.5"
-        )
-
-        # Parse response
-        detections = []
-        boxes = getattr(response, "boxes", None) or getattr(response, "points", None) or []
-
-        for box in boxes:
-            mention = str(getattr(box, "mention", "")).lower()
-
-            # Map to token type
-            token_type = None
-            if "bridge" in mention or "span" in mention:
-                token_type = "bridge"
-            elif "hospital" in mention or "medical" in mention or "cross" in mention:
-                token_type = "hospital"
-            elif "food" in mention or "water" in mention or "distribution" in mention:
-                token_type = "food_shelter"
-            elif "shelter" in mention or "tent" in mention:
-                token_type = "shelter"
-            elif "storm" in mention or "warning" in mention or "orange" in mention:
-                token_type = "disaster_start"
-            elif "person" in mention or "human" in mention or "figurine" in mention:
-                token_type = "person"
-
-            if token_type:
-                # Get center coordinates
-                top_left = getattr(box, "top_left", None)
-                bottom_right = getattr(box, "bottom_right", None)
-
-                if top_left and bottom_right:
-                    # Convert from 0-1000 scale to pixels
-                    x1 = float(getattr(top_left, "x", 0)) / 1000 * CAMERA_WIDTH
-                    y1 = float(getattr(top_left, "y", 0)) / 1000 * CAMERA_HEIGHT
-                    x2 = float(getattr(bottom_right, "x", 0)) / 1000 * CAMERA_WIDTH
-                    y2 = float(getattr(bottom_right, "y", 0)) / 1000 * CAMERA_HEIGHT
-
-                    center = ((x1 + x2) / 2, (y1 + y2) / 2)
-                    detections.append({
-                        'token_type': token_type,
-                        'center': center,
-                        'mention': mention
-                    })
-
-        # Clean up temp file
-        if frame_path and Path(frame_path).exists():
-            Path(frame_path).unlink()
-
-        return detections
-
+        boxes = CLASSIFIER.classify_frame(frame)
     except Exception as e:
-        print(f"Perceptron error: {e}")
+        print(f"Classifier error: {e}")
         return []
+    detections = []
+    for box in boxes:
+        if not box.token_type:
+            continue
+        detections.append({
+            'token_type': box.token_type,
+            'center': box.center,
+            'mention': box.mention,
+            'class_source': box.source,
+            'rotation_deg': box.rotation_deg or 0.0,
+            'verified_by_local_cv': box.verified_by_local_cv,
+        })
+    return detections
 
 
 # =============================================================================
 # BACKEND API
 # =============================================================================
 
-async def send_token_to_backend(token_type, board_uv, world_version):
-    """Send token placement to backend API."""
+async def send_observation_to_backend(obj_id, obj, board_uv, frame_count):
+    """Send a confirmed ObjectObservation; the gateway resolves the pad and world version."""
     try:
         async with httpx.AsyncClient() as client:
             response = await client.post(
-                f"{BACKEND_URL}/action",
+                f"{BACKEND_URL}/perception/observe",
                 json={
-                    "action_id": f"perception-{int(time.time()*1000)}",
-                    "type": "place_token",
-                    "source": "physical_perceptron",
-                    "token_type": token_type,
+                    "event_type": "object_observed",
+                    "event_id": f"live-{obj_id}-{int(time.time()*1000)}",
+                    "frame_id": frame_count,
+                    "token_id": f"tracked-{obj_id}",
+                    "object_type": obj['token_type'],
+                    "class_source": obj.get('class_source', 'perceptron'),
                     "board_uv": list(board_uv),
-                    "expected_world_version": world_version
+                    "rotation_deg": obj.get('rotation_deg', 0.0),
+                    "stable_ms": int(obj['frames_stable'] * 1000 / 30),
+                    "vision_status": "confirmed",
+                    "frame_provenance": f"live:camera{CAMERA_INDEX}:frame-{frame_count}",
+                    "latency_ms": CLASSIFIER.last_latency_ms,
                 },
                 timeout=5.0
             )
-            result = response.json()
-            return result
+            return response.json()
     except Exception as e:
         print(f"Backend error: {e}")
         return {"accepted": False, "error": str(e)}
@@ -403,13 +369,13 @@ async def main():
 +===========================================================+
 """)
 
-    # Check Perceptron API key
+    # Classifier: Perceptron when a key + SDK are present, otherwise the local bridge rule
     api_key = os.environ.get("PERCEPTRON_API_KEY")
-    if not api_key:
-        print("WARNING: PERCEPTRON_API_KEY not set!")
-        print("Token detection will not work without it.")
+    if CLASSIFIER.available:
+        print("Perceptron: configured (sponsor model classifies all six pieces)")
     else:
-        print(f"Perceptron API key: {api_key[:10]}...")
+        print(f"WARNING: Perceptron unavailable ({CLASSIFIER.unavailable_reason}).")
+        print("Only the printed BRIDGE can be recognised, by the local colour+shape rule (shown as LOCAL_CV).")
 
     # Check backend
     print("\nChecking backend connection...")
@@ -447,7 +413,8 @@ async def main():
     await update_perception_status({
         "camera": "connected",
         "calibration": "calibrated" if homography is not None else "uncalibrated",
-        "perceptron": "ready" if api_key else "no_api_key",
+        "perceptron": "ready" if CLASSIFIER.available else (CLASSIFIER.unavailable_reason or "not_connected"),
+        "classifier": "perceptron" if CLASSIFIER.available else "local_cv_bridge_only",
         "mode": "live"
     })
 
@@ -460,7 +427,8 @@ async def main():
     print("\n" + "="*50)
     print("LIVE DETECTION RUNNING")
     print("="*50)
-    print("Place tokens on the map - they will be detected!")
+    print("Keep hands and pieces off the board for the first second (background warm-up).")
+    print("Then place tokens on the map - they will be detected!")
     print("Press Q to quit")
     print("="*50 + "\n")
 
@@ -480,9 +448,8 @@ async def main():
             print(f"Calling Perceptron for {len(stable_objects)} object(s)...")
             last_perceptron_call = now
 
-            # Detect with Perceptron
-            detections = detect_with_perceptron(frame)
-            print(f"Perceptron found: {detections}")
+            detections = classify_frame(frame)
+            print(f"Classifier found: {[(d['token_type'], d['class_source']) for d in detections]}")
 
             # Match detections to tracked objects
             for detection in detections:
@@ -496,7 +463,9 @@ async def main():
 
                     if dist < 100:  # Within 100 pixels
                         tracker.mark_identified(obj_id, detection['token_type'])
-                        print(f"Object #{obj_id} identified as: {detection['token_type']}")
+                        obj['class_source'] = detection['class_source']
+                        obj['rotation_deg'] = detection['rotation_deg']
+                        print(f"Object #{obj_id} identified as: {detection['token_type']} ({detection['class_source']})")
                         break
 
         # Send identified objects to backend
@@ -506,11 +475,13 @@ async def main():
             board_uv = pixel_to_board(homography, center[0], center[1],
                                       CAMERA_WIDTH, CAMERA_HEIGHT)
 
-            print(f"Sending {obj['token_type']} at {board_uv} to backend...")
-            result = await send_token_to_backend(obj['token_type'], board_uv, world_version)
+            if homography is None:
+                print(f"  {obj['token_type']} seen at frame-normalised {board_uv}; board not calibrated, pad match will fail")
+            print(f"Sending {obj['token_type']} ({obj.get('class_source')}) at {board_uv} to backend...")
+            result = await send_observation_to_backend(obj_id, obj, board_uv, frame_count)
 
             if result.get('accepted'):
-                print(f"  -> ACCEPTED! New world version: {result.get('world_version')}")
+                print(f"  -> ACCEPTED at {result.get('site_id')}! New world version: {result.get('world_version')}")
                 world_version = result.get('world_version', world_version)
                 tracker.mark_sent(obj_id)
             else:

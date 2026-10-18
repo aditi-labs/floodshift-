@@ -31,6 +31,7 @@ from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
 from backend.contracts import (
+    ObjectObservation, ObservationResult, VisionStatus,
     WorldSnapshot, WorldAction, ActionResult, ActionType, TokenState,
     WorldMetrics, GhostSuggestion, EdgeState, Phase, TokenType, VisionSource,
     HealthResponse, SuggestRequest, NarrateRequest, NarrateResponse,
@@ -514,6 +515,51 @@ async def websocket_endpoint(ws: WebSocket):
 # =============================================================================
 # PERCEPTION ENDPOINTS (P3 internal, for debugging)
 # =============================================================================
+
+OBSERVATION_SOURCES = {"perceptron": "physical_perceptron", "local_cv": "physical_local_cv",
+                       "manual": "manual", "replay": "replay"}
+
+
+@app.post("/perception/observe", response_model=ObservationResult)
+async def observe(observation: ObjectObservation):
+    """Camera path: ObjectObservation -> vision.status broadcast -> WorldAction -> snapshot.
+
+    The pipeline never needs a site_id or the world version: the reducer resolves the
+    pad from board_uv and the gateway reads the version under the lock. Only a
+    confirmed observation mutates the world; pending/unavailable ones are shown only.
+    """
+    if not world_service:
+        raise HTTPException(status_code=503, detail="World service not initialized")
+    await broadcast_event("vision.status", {"observations": [observation.model_dump(mode="json")],
+                                            "latency_ms": observation.latency_ms})
+    perception_status.update({"last_detection": datetime.utcnow().strftime("%H:%M:%S"),
+                              "last_class_source": observation.class_source.value})
+    if observation.vision_status != VisionStatus.CONFIRMED:
+        return ObservationResult(accepted=False, world_version=_world_version(),
+                                 rejection_reason=f"vision_{observation.vision_status.value}")
+    async with world_lock:
+        action = WorldAction(
+            action_id=f"obs-{observation.event_id}",
+            type=ActionType.PLACE_TOKEN,
+            source=OBSERVATION_SOURCES[observation.class_source.value],
+            token_id=observation.token_id,
+            token_type=observation.object_type,
+            board_uv=observation.board_uv,
+            expected_world_version=_world_version(),
+        )
+        raw = world_service.apply(action)
+    result = raw if isinstance(raw, dict) else {"accepted": raw.accepted, "world_version": raw.world_version,
+                                                 "reason": raw.rejection_reason, "snapshot": None}
+    site_id = None
+    if result["accepted"]:
+        snapshot = result.get("snapshot") or {}
+        token = next((t for t in snapshot.get("tokens", []) if t["id"] == observation.token_id), None)
+        site_id = token["site_id"] if token else None
+        await broadcast_snapshot()
+    return ObservationResult(accepted=result["accepted"], action_id=action.action_id,
+                             world_version=result["world_version"], rejection_reason=result.get("reason"),
+                             site_id=site_id, applied=result["accepted"])
+
 
 @app.post("/perception/scan")
 async def trigger_scan():
