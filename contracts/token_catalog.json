@@ -4,43 +4,55 @@
     "hospital": {
       "display_name": "Hospital / Field Care",
       "icon": "medical-cross",
-      "perceptron_hint": "miniature building with medical cross",
-      "valid_site_kinds": ["medical_site"],
+      "perceptron_hint": "top view of a cross-shaped base and low central building with a large raised medical plus sign covering the roof",
+      "valid_site_kinds": [
+        "medical_site"
+      ],
       "effect": "activate_field_care"
     },
     "shelter": {
       "display_name": "Emergency Shelter",
       "icon": "tent",
-      "perceptron_hint": "miniature sleeping refuge tent",
-      "valid_site_kinds": ["shelter_site"],
+      "perceptron_hint": "top view of a house-shaped pentagonal base with a solid steep pitched tent roof, a long central ridge, and a broad entrance step",
+      "valid_site_kinds": [
+        "shelter_site"
+      ],
       "effect": "deploy_shelter"
     },
     "food_shelter": {
       "display_name": "Food & Water Station",
       "icon": "bowl",
-      "perceptron_hint": "miniature aid distribution canopy with food symbol",
-      "valid_site_kinds": ["food_site"],
+      "perceptron_hint": "top view of a chamfered rectangular base with four round corner posts, a large bowl rim on the left, and a smaller cup with a loop handle on the right",
+      "valid_site_kinds": [
+        "food_site"
+      ],
       "effect": "deploy_food_station"
     },
     "bridge": {
       "display_name": "Temporary Bridge",
       "icon": "bridge",
-      "perceptron_hint": "miniature bridge span across river",
-      "valid_site_kinds": ["bridge_crossing"],
+      "perceptron_hint": "top view of a long narrow bridge deck with four flared approach tabs, two continuous parallel raised rails, and seven transverse deck slats",
+      "valid_site_kinds": [
+        "bridge_crossing"
+      ],
       "effect": "deploy_bridge"
     },
     "disaster_start": {
       "display_name": "START DISASTER",
       "icon": "storm",
-      "perceptron_hint": "miniature orange storm warning button or token",
-      "valid_site_kinds": ["control_start_pad"],
+      "perceptron_hint": "top view of an octagonal base with a large raised warning triangle, a central lightning bolt, and four short rectangular alert rays at the cardinal edges",
+      "valid_site_kinds": [
+        "control_start_pad"
+      ],
       "effect": "start_disaster"
     },
     "person": {
       "display_name": "People / Household",
       "icon": "person",
-      "perceptron_hint": "miniature human figurine with circular base",
-      "valid_site_kinds": ["population_node"],
+      "perceptron_hint": "top view of one continuous chunky human silhouette with a round head joined by a broad neck to the torso, two outstretched rounded arms, and two splayed rounded legs",
+      "valid_site_kinds": [
+        "population_node"
+      ],
       "effect": "place_people"
     }
   }
