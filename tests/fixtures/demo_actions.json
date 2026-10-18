@@ -1,5 +1,5 @@
 {
-  "description": "Demo action sequence for FLOODSHIFT 3-minute presentation",
+  "description": "Manual demo action sequence for the current MockWorldService (contracts/fixture_mock_world.json); educational mock, not live Perceptron evidence",
   "scenario_id": "nepal_rasuwa_v1",
   "actions": [
     {
@@ -8,10 +8,14 @@
       "action": {
         "action_id": "demo-start-001",
         "type": "place_token",
-        "source": "physical_perceptron",
+        "source": "manual",
         "token_type": "disaster_start",
         "site_id": "start_pad",
-        "board_uv": [0.1, 0.1]
+        "board_uv": [
+          0.1,
+          0.1
+        ],
+        "expected_world_version": 1
       },
       "expected_result": "Phase changes to disaster_active, hazard overlay appears"
     },
@@ -21,12 +25,16 @@
       "action": {
         "action_id": "demo-person-001",
         "type": "place_token",
-        "source": "physical_perceptron",
+        "source": "manual",
         "token_type": "person",
         "site_id": "people_east",
-        "board_uv": [0.72, 0.42]
+        "board_uv": [
+          0.72,
+          0.42
+        ],
+        "expected_world_version": 2
       },
-      "expected_result": "Person appears, needs food/medical/shelter - all blocked by river"
+      "expected_result": "Person token is accepted; the mock does not calculate unmet needs"
     },
     {
       "step": 3,
@@ -34,42 +42,87 @@
       "action": {
         "action_id": "demo-hospital-001",
         "type": "place_token",
-        "source": "physical_perceptron",
+        "source": "manual",
         "token_type": "hospital",
         "site_id": "medical_site_west",
-        "board_uv": [0.25, 0.55]
+        "board_uv": [
+          0.25,
+          0.55
+        ],
+        "expected_world_version": 3
       },
-      "expected_result": "Hospital appears but cannot reach eastern village"
+      "expected_result": "Hospital token is accepted; real medical reachability requires the authoritative world service"
     },
     {
-      "step": 4,
+      "name": "Place Food & Water Station",
+      "action": {
+        "action_id": "demo-food_shelter-001",
+        "type": "place_token",
+        "source": "manual",
+        "token_type": "food_shelter",
+        "site_id": "food_site_west",
+        "board_uv": [
+          0.3,
+          0.6
+        ],
+        "expected_world_version": 4
+      },
+      "expected_result": "Token is accepted at its matching service site",
+      "step": 4
+    },
+    {
+      "name": "Place Emergency Shelter",
+      "action": {
+        "action_id": "demo-shelter-001",
+        "type": "place_token",
+        "source": "manual",
+        "token_type": "shelter",
+        "site_id": "shelter_site_west",
+        "board_uv": [
+          0.22,
+          0.65
+        ],
+        "expected_world_version": 5
+      },
+      "expected_result": "Token is accepted at its matching service site",
+      "step": 5
+    },
+    {
+      "step": 6,
       "name": "Request Bridge Suggestion",
       "action": {
         "action_id": "demo-suggest-001",
         "type": "suggest",
-        "source": "manual"
+        "source": "manual",
+        "expected_world_version": 6
       },
-      "expected_result": "Ghost bridge appears at crossing_east"
+      "expected_result": "Action is acknowledged without a version change; POST /plan/suggest returns a bridge suggestion at crossing_east"
     },
     {
-      "step": 5,
+      "step": 7,
       "name": "Place Bridge at Ghost Location",
       "action": {
         "action_id": "demo-bridge-001",
         "type": "place_token",
-        "source": "physical_perceptron",
+        "source": "manual",
         "token_type": "bridge",
         "site_id": "crossing_east",
-        "board_uv": [0.47, 0.61]
+        "board_uv": [
+          0.47,
+          0.61
+        ],
+        "expected_world_version": 6
       },
-      "expected_result": "Bridge placed, crossing unblocked, route turns green, metrics improve"
+      "expected_result": "Bridge is accepted, the mock crossing is unblocked, and mock blocked_roads becomes zero; service improvements require the authoritative world service"
     }
   ],
   "demo_duration_seconds": 180,
   "notes": [
-    "Pre-stage food_shelter and shelter tokens before demo",
-    "Have 2 person tokens ready",
-    "Practice ghost bridge placement alignment",
+    "Start with a fresh MockWorldService at world_version 1.",
+    "All six token placements are included; no pre-staged tokens are required.",
+    "For live or P4 WorldService replay, use the current snapshot version and that scenario's approved site coordinates; these coordinates target backend/api/mock_world.py.",
+    "The suggest action is supported without changing world_version. The current mock action handler acknowledges it; POST /plan/suggest returns the suggestion.",
+    "Mock acceptance does not verify routing or service improvements; use scenarios/nepal_rasuwa_v1/data/demo_actions.json for the authoritative world demonstration.",
     "Keep backup video ready"
   ]
 }

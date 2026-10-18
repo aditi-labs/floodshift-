@@ -228,9 +228,9 @@ export interface ModeBadges {
 export const TOKEN_LABELS: Record<TokenType, string> = {
   hospital: "Hospital / Field Care",
   shelter: "Emergency Shelter",
-  food_shelter: "Food & Water",
+  food_shelter: "Food & Water Station",
   bridge: "Temporary Bridge",
-  disaster_start: "Start Disaster",
+  disaster_start: "START DISASTER",
   person: "People / Household",
   truck: "Relief Truck",
   helicopter: "Helicopter",
