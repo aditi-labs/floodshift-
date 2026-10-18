@@ -408,7 +408,7 @@ async def branch_compare(a: str, b: str):
     return {
         "baseline_snapshot_id": "baseline" if world_service.has_branch("baseline") else None,
         "branches": [{"id": r["id"], "action": ", ".join(r["placed"]) or "no pieces",
-                      **r["metrics"]} for r in comparison["branches"]],
+                      **r["metrics"], "game_score": r["game"]["score"]} for r in comparison["branches"]],
         "delta_from_first": comparison["delta_from_first"],
         "metric_provenance": comparison["metric_provenance"],
     }

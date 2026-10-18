@@ -132,6 +132,8 @@ export interface ServiceRoute {
   facility_id: string | null;
   reachable: boolean;
   edge_ids: string[];
+  /** Ordered polyline along exactly edge_ids (every mapped bend), computed by the backend. */
+  board_uv?: UV[] | null;
 }
 
 export type RiskLevel = "low" | "medium" | "high" | "critical";
@@ -176,6 +178,60 @@ export interface WorldSnapshot {
   /** Risk zones with colors that adapt as tokens provide protection */
   risk_zones?: RiskZone[];
   mode?: "prevention" | "relief";
+  /** Game score, objectives and results from backend/world/game.py (pure function of state). */
+  game?: GameState | null;
+}
+
+/** Outcome metrics the game layer compares against the no-response baseline. */
+export interface GameOutcomes {
+  unmet_food_model: number;
+  unmet_medical_model: number;
+  unmet_refuge_model: number;
+  people_reachable_for_food: number;
+  people_reachable_for_medical: number;
+  people_reachable_for_shelter: number;
+  reachable_communities: number;
+}
+
+export interface GameIntervention {
+  token_id: string;
+  type: TokenType;
+  site_id: string;
+  label: string;
+  cost_model: number;
+  /** false: removing it would change no measured outcome (penalised). */
+  effective: boolean;
+  marginal: GameOutcomes;
+}
+
+export interface GameObjective {
+  id: "restore_access" | "connect_communities" | "service_coverage" | "minimize_unmet" | "within_budget";
+  label: string;
+  complete: boolean;
+  detail: string;
+}
+
+export interface GameState {
+  status: "not_started" | "active";
+  score: number;
+  score_parts: Partial<Record<"access" | "needs_met" | "communities" | "unmet_penalty" | "spend_penalty" | "ineffective_penalty", number>>;
+  formula: string;
+  weights: Record<string, number>;
+  label: string;
+  objectives: GameObjective[];
+  interventions: GameIntervention[];
+  population_unit?: string;
+  baseline?: GameOutcomes;
+  current?: GameOutcomes;
+  communities_total?: number;
+  communities_reconnected?: number;
+  total_need_model?: number;
+  unmet_total_model?: number;
+  baseline_unmet_total_model?: number;
+  budget_total_model?: number;
+  budget_spent_model?: number;
+  ineffective_interventions?: number;
+  summary?: { improved: string[]; unresolved: string[] };
 }
 
 export type ActionType =
@@ -258,7 +314,7 @@ export interface ObjectObservation {
 
 export interface BranchComparison {
   baseline_snapshot_id: string | null;
-  branches: Array<{ id: string; action: string; [metric: string]: number | string }>;
+  branches: Array<{ id: string; action: string; game_score?: number; [metric: string]: number | string | undefined }>;
   metric_provenance: string;
 }
 
@@ -270,7 +326,7 @@ export type Envelope =
   | { type: "server.hello"; seq?: number; sent_at?: string; payload: { status: string } };
 
 export interface ModeBadges {
-  VISION: "LIVE_PERCEPTRON" | "LOCAL_CV" | "REPLAY" | "MANUAL";
+  VISION: "LIVE_PERCEPTRON" | "LOCAL_CV" | "MANUAL";
   PROJECTOR: "CALIBRATED" | "SCREEN";
   GEMINI: "LIVE" | "TEXT" | "OFF";
   DATA: "HOT_DERIVED" | "SCHEMATIC";

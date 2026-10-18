@@ -17,7 +17,7 @@ SCORING = {
     'unmet_penalty_per_unit': 2,    # - per unit of essential need still unmet
     'spend_penalty_per_unit': 15,   # - per unit of model budget spent
     'ineffective_penalty': 40,      # - per intervention whose removal changes no measured outcome
-    'unmet_reduction_goal': 0.5,    # objective: cut unmet need to at most this share of the baseline
+    'unmet_reduction_goal': 0.4,    # objective: cut unmet need to at most this share of the baseline
 }
 
 FORMULA = ('score = 5·Δaccess + 10·Δneeds_met + 50·Δcommunities − 2·unmet − 15·budget_spent '

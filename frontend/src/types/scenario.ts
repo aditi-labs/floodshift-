@@ -23,6 +23,15 @@ export interface SiteGeometry {
   rotation_deg?: number;
 }
 
+export interface FloodCorridor {
+  id: string;
+  stage: number;
+  path: UV[];
+  /** Full corridor width in board units. */
+  width_uv: number;
+  waterway: string;
+}
+
 export interface ScenarioGeometry {
   scenario_id: string;
   name: string;
@@ -32,7 +41,13 @@ export interface ScenarioGeometry {
   board?: { width_mm?: number; height_mm?: number; control_inset_uv?: [number, number, number, number] };
   provenance_label?: string;
   rivers: UV[][];
+  /** Scenario flood footprints (polygons), when the bundle has them. */
   hazard_zones: { id: string; stage: number; polygon: UV[] }[];
+  /** Otherwise: illustrative river reaches near that stage's simulated closures (backend-derived). */
+  flood_corridors?: FloodCorridor[];
+  /** Number of hazard stages including the dry stage 0. */
+  stage_count?: number;
+  hazard?: { method?: string | null; kind: "simulated_hazard"; geometry_source: string; limitations?: string[] };
   roads: RoadGeometry[];
   sites: SiteGeometry[];
   labels: { text: string; board_uv: UV }[];

@@ -504,7 +504,7 @@
       "unmet_penalty_per_unit": 2,
       "spend_penalty_per_unit": 15,
       "ineffective_penalty": 40,
-      "unmet_reduction_goal": 0.5
+      "unmet_reduction_goal": 0.4
     },
     "label": "Game score \u2014 compares strategies in this educational model; not a real outcome metric",
     "population_unit": "model people units (no verified headcount)",
@@ -627,7 +627,7 @@
         "id": "minimize_unmet",
         "label": "Minimize unmet needs",
         "complete": true,
-        "detail": "0 of 18 need units unmet (goal \u2264 50% of no-response)"
+        "detail": "0 of 18 need units unmet (goal \u2264 40% of no-response)"
       },
       {
         "id": "within_budget",
