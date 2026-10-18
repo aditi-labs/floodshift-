@@ -11,6 +11,7 @@ from backend.planning.ghost_bridge import best_suggestion, eligible_intervention
 from backend.planning.population_routes import plan_population_routes
 from backend.simulation.reachability import measure
 from backend.simulation.routing import route_minutes
+from backend.world.game import evaluate
 from backend.world.rules import SOURCES, RuleError, initial_state, reduce_action, require
 from backend.world.geometry import scenario_geometry
 from backend.world.scenarios import DEFAULT_BUNDLE, load_bundle, validate_bundle
@@ -76,13 +77,16 @@ class WorldService:
     def _snapshot(self, state=None, version=None):
         state = self._state if state is None else state
         version = self._version if version is None else version
+        measured = measure(self._bundle, state)
         snapshot = {'schema_version': 2, 'world_version': version,
                 'snapshot_id': 'snap-' + str(version),
                 'scenario_id': self._bundle['scenario_id'],
                 **{k: deepcopy(state[k]) for k in ('phase', 'simulation_stage', 'branch_id',
                    'token_inventory', 'budget_remaining_model', 'narration_event')},
                 'tokens': deepcopy(sorted(state['tokens'].values(), key=lambda t: t['id'])),
-                **measure(self._bundle, state),
+                **measured,
+                # Game score/objectives are a pure function of this state (no event accumulation).
+                'game': evaluate(self._bundle, state, measured),
                 # Shown only after someone asks (suggest action); cleared by a bridge or reset.
                 'ghost_suggestion': (best_suggestion(self._bundle, state, state['ghost_goal'])
                                      if state.get('ghost_goal') else None),
@@ -135,7 +139,8 @@ class WorldService:
             states = {b: self._saved.get(b, self._branches.get(b)) for b in branches}
             records = [{'id': b, 'saved': b in self._saved,
                         'placed': sorted(t['type'] for t in states[b]['tokens'].values()),
-                        'metrics': measure(self._bundle, states[b])['metrics']} for b in branches]
+                        'metrics': measure(self._bundle, states[b])['metrics'],
+                        'game': evaluate(self._bundle, states[b])} for b in branches]
             base = records[0]['metrics']
             return {'branches': records, 'delta_from_first': {r['id']: {k: v - base[k]
                     for k, v in r['metrics'].items()} for r in records[1:]},

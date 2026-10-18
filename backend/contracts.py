@@ -220,6 +220,8 @@ class ServiceRoute(BaseModel):
     facility_id: str | None = None
     reachable: bool
     edge_ids: list[str]  # if unreachable: the path that WOULD work with closures open
+    # Ordered polyline along exactly those mapped edges (every bend), for drawing.
+    board_uv: list[tuple[float, float]] | None = None
 
 
 class NarrationEvent(BaseModel):
@@ -256,6 +258,8 @@ class WorldSnapshot(BaseModel):
     budget_remaining_model: int | None = None
     service_routes: list[ServiceRoute] = []
     routing_decision: dict | None = None  # reasoning bundle only: group evacuation plan
+    # Game score/objectives/results computed by backend/world/game.py from this state.
+    game: dict | None = None
 
     # Prevention mode fields
     mode: Literal["prevention", "relief"] = "relief"
@@ -340,7 +344,7 @@ class PreventionSuggestion(BaseModel):
 class HealthResponse(BaseModel):
     status: str
     world_version: int | None = None
-    vision_mode: str = "mock"
+    vision_mode: str = "manual"
     perceptron_status: str = "not_connected"
     gemini_status: str = "not_connected"
 

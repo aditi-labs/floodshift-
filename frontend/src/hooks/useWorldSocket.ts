@@ -2,22 +2,26 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ActionResult, Envelope, ObjectObservation, TokenType, UV, WorldAction, WorldSnapshot } from "../types/contracts";
 import type { ScenarioGeometry } from "../types/scenario";
 import { createLiveTransport } from "../lib/liveTransport";
-import { createMockTransport } from "../mocks/mockTransport";
 import { setBoardAspect } from "../types/geometry";
 import { newActionId, nowUtc, type ConnectionStatus, type WorldTransport } from "../lib/transport";
+import { diffSnapshots, type ReactionSet } from "../lib/worldReactions";
 
-export const USE_MOCKS = String(import.meta.env.VITE_USE_MOCKS ?? "true") !== "false";
-const API_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? "http://localhost:8000";
+// The real FastAPI WorldService is the only source of state. There is no scripted or
+// offline mode: if the gateway is unreachable the UI shows an explicit error.
+export const API_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? "http://localhost:8000";
 
 let shared: WorldTransport | null = null;
 function transport(): WorldTransport {
-  shared ??= USE_MOCKS ? createMockTransport() : createLiveTransport(API_URL);
+  shared ??= createLiveTransport(API_URL);
   return shared;
 }
 
+/** How long one set of environmental reactions stays on the board. */
+export const REACTION_MS = 4600;
+
 export interface LogEntry {
   at: string;
-  kind: "accepted" | "rejected" | "info" | "warning" | "narration" | "vision";
+  kind: "accepted" | "rejected" | "info" | "warning" | "narration" | "vision" | "reaction";
   text: string;
 }
 
@@ -30,21 +34,28 @@ export interface Feedback {
   until: number;
 }
 
+export interface ActiveReactions extends ReactionSet {
+  until: number;
+}
+
 export function useWorldSocket() {
   const t = useMemo(transport, []);
   const [snapshot, setSnapshot] = useState<WorldSnapshot | null>(null);
   const [scenario, setScenario] = useState<ScenarioGeometry | null>(null);
+  const [scenarioError, setScenarioError] = useState<string | null>(null);
   const [status, setStatus] = useState<ConnectionStatus>("connecting");
   const [narration, setNarration] = useState<{ text: string; source: string } | null>(null);
   const [observations, setObservations] = useState<ObjectObservation[]>([]);
   const [visionLatency, setVisionLatency] = useState<number | null>(null);
   const [log, setLog] = useState<LogEntry[]>([]);
   const [feedback, setFeedback] = useState<Feedback[]>([]);
+  const [reactions, setReactions] = useState<ActiveReactions[]>([]);
   const lastSeq = useRef(-Infinity);
   const snapRef = useRef<WorldSnapshot | null>(null);
+  const reacted = useRef(new Set<string>());
 
   const push = useCallback((kind: LogEntry["kind"], text: string) => {
-    setLog((l) => [{ at: new Date().toLocaleTimeString(), kind, text }, ...l].slice(0, 80));
+    setLog((l) => [{ at: new Date().toLocaleTimeString(), kind, text }, ...l].slice(0, 120));
   }, []);
 
   const flash = useCallback((kind: Feedback["kind"], board_uv: UV, label: string, ms = 2600) => {
@@ -53,11 +64,45 @@ export function useWorldSocket() {
     window.setTimeout(() => setFeedback((list) => list.filter((x) => x.id !== f.id)), ms);
   }, []);
 
+  const react = useCallback(
+    (prev: WorldSnapshot | null, next: WorldSnapshot) => {
+      const set = diffSnapshots(prev, next);
+      if (!set || reacted.current.has(set.key)) return;
+      reacted.current.add(set.key);
+      const active: ActiveReactions = { ...set, until: Date.now() + REACTION_MS };
+      setReactions((list) => [...list.filter((r) => r.until > Date.now()), active]);
+      window.setTimeout(() => setReactions((list) => list.filter((r) => r.key !== set.key)), REACTION_MS);
+      if (set.headline) push("reaction", `${set.headline.text}${set.scoreDelta ? ` (score ${set.scoreDelta > 0 ? "+" : ""}${set.scoreDelta})` : ""}`);
+    },
+    [push],
+  );
+
+  // Geometry is static per scenario, but the server may be started after the UI.
   useEffect(() => {
-    t.getScenario().then((s) => {
-      setBoardAspect(s.aspect_ratio);
-      setScenario(s);
-    });
+    let cancelled = false;
+    let timer: number | undefined;
+    const load = () =>
+      t.getScenario().then(
+        (s) => {
+          if (cancelled) return;
+          setBoardAspect(s.aspect_ratio);
+          setScenario(s);
+          setScenarioError(null);
+        },
+        (err: Error) => {
+          if (cancelled) return;
+          setScenarioError(`GET ${t.baseUrl}/scenario failed: ${err.message}`);
+          timer = window.setTimeout(load, 2000);
+        },
+      );
+    load();
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [t]);
+
+  useEffect(() => {
     const onEnvelope = (e: Envelope) => {
       // A new connection (possibly to a restarted server) restarts the sequence.
       if (e.type === "server.hello") lastSeq.current = -Infinity;
@@ -66,10 +111,13 @@ export function useWorldSocket() {
       switch (e.type) {
         case "world.snapshot": {
           const prev = snapRef.current;
-          // Ignore out-of-order snapshots on the same branch (reset/branch load lowers the version legitimately).
+          // Ignore out-of-order snapshots on the same branch (reset/branch load still raise the version).
           if (prev && e.payload.branch_id === prev.branch_id && e.payload.world_version < prev.world_version && e.payload.world_version !== 0) return;
+          // A restarted server begins again at version 0: treat it as a new world, not a diff.
+          const restarted = prev && e.payload.world_version === 0 && prev.world_version > 0;
           snapRef.current = e.payload;
           setSnapshot(e.payload);
+          if (!restarted) react(prev, e.payload);
           break;
         }
         case "narration":
@@ -93,7 +141,7 @@ export function useWorldSocket() {
       }
     };
     return t.connect(onEnvelope, setStatus);
-  }, [t, push, flash]);
+  }, [t, push, flash, react]);
 
   const handleResult = useCallback(
     (r: ActionResult, label: string, uv?: UV | null) => {
@@ -120,7 +168,8 @@ export function useWorldSocket() {
       };
       try {
         const r = await t.sendAction(action);
-        return handleResult(r, `${action.type}${action.token_type ? " " + action.token_type : ""}${action.site_id ? " @ " + action.site_id : ""}`, action.board_uv);
+        const label = `${action.type}${action.token_type ? " " + action.token_type : ""}${action.site_id ? " @ " + action.site_id : ""}${action.token_id && action.type !== "place_token" ? " " + action.token_id : ""}`;
+        return handleResult(r, label, action.board_uv);
       } catch (err) {
         push("warning", `POST /action failed: ${(err as Error).message}`);
         return null;
@@ -136,7 +185,25 @@ export function useWorldSocket() {
     [send],
   );
 
-  const reset = useCallback(() => send({ type: "reset" }), [send]);
+  const removeToken = useCallback((token_id: string) => send({ type: "remove_token", token_id }), [send]);
+
+  const moveToken = useCallback(
+    (token_id: string, site_id: string, board_uv: UV) => send({ type: "move_token", token_id, site_id, board_uv }),
+    [send],
+  );
+
+  const advanceStage = useCallback(() => send({ type: "advance_stage" }), [send]);
+
+  const reset = useCallback(async () => {
+    try {
+      const r = await t.reset();
+      push(r.reset ? "accepted" : "rejected", `reset → world ${r.world_version}`);
+      return r;
+    } catch (err) {
+      push("warning", `POST /reset failed: ${(err as Error).message}`);
+      return null;
+    }
+  }, [t, push]);
 
   const suggest = useCallback(
     async (goalId = "needs_served") => {
@@ -165,16 +232,21 @@ export function useWorldSocket() {
   );
 
   return {
-    transportKind: t.kind,
+    apiUrl: t.baseUrl,
     snapshot,
     scenario,
+    scenarioError,
     status,
     narration,
     observations,
     visionLatency,
     log,
     feedback,
+    reactions,
     placeToken,
+    removeToken,
+    moveToken,
+    advanceStage,
     reset,
     suggest,
     send,
@@ -222,10 +294,11 @@ const REASONS: Record<string, string> = {
   too_far_from_mapped_road: "PLACE ON A ROAD",
   unknown_branch: "NO SAVED BRANCH",
   last_stage: "LAST STAGE",
+  unknown_token: "PIECE NOT ON BOARD",
+  start_is_latched: "START STAYS UNTIL RESET",
 };
 
 export function reasonText(reason?: string | null): string {
   if (!reason) return "REJECTED";
-  if (reason.startsWith("mock_script_expects:")) return "NOT IN DEMO SCRIPT";
   return REASONS[reason] ?? reason.replace(/_/g, " ").toUpperCase();
 }

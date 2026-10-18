@@ -8,13 +8,20 @@ import type {
   WorldSnapshot,
 } from "../types/contracts";
 import type { ScenarioGeometry } from "../types/scenario";
-import { MOCK_SCENARIO } from "../mocks/scenario";
 import { newActionId, nowUtc, type ConnectionStatus, type WorldTransport } from "./transport";
 
 const STALE_AFTER_MS = 10_000;
 
 async function json<T>(res: Response): Promise<T> {
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+  if (!res.ok) {
+    let detail = "";
+    try {
+      detail = JSON.stringify((await res.json()).detail ?? "");
+    } catch {
+      /* body was not JSON */
+    }
+    throw new Error(`${res.status} ${res.statusText}${detail ? " " + detail : ""}`);
+  }
   return (await res.json()) as T;
 }
 
@@ -27,6 +34,7 @@ export function createLiveTransport(baseUrl: string): WorldTransport {
 
   return {
     kind: "live",
+    baseUrl: http,
 
     connect(onEnvelope, onStatus) {
       let ws: WebSocket | null = null;
@@ -85,16 +93,11 @@ export function createLiveTransport(baseUrl: string): WorldTransport {
 
     getWorld: () => fetch(http + "/world").then(json<WorldSnapshot>),
 
-    async getScenario() {
-      try {
-        return await fetch(http + "/scenario").then(json<ScenarioGeometry>);
-      } catch {
-        // Until P3/P4 serve geometry, draw the schematic layout (labelled SCHEMATIC).
-        return MOCK_SCENARIO;
-      }
-    },
+    // No fallback geometry: if the gateway is down the UI says so instead of drawing a fake board.
+    getScenario: () => fetch(http + "/scenario").then(json<ScenarioGeometry>),
 
     sendAction: (action: WorldAction) => post<ActionResult>("/action", action),
+    reset: () => post<{ reset: boolean; world_version: number }>("/reset", {}),
 
     // backend returns {has_suggestion, suggestion, world_version}; the ghost itself arrives
     // in the next snapshot's ghost_suggestion.

@@ -24,7 +24,7 @@ def load_bundle(path=None):
         raise BundleLoadError(f"scenario.json not found in {data}")
 
     try:
-        bundle = json.loads(scenario_file.read_text())
+        bundle = json.loads(scenario_file.read_text(encoding="utf-8"))
     except json.JSONDecodeError as e:
         raise BundleLoadError(f"Invalid JSON in scenario.json: {e}")
 
@@ -34,7 +34,7 @@ def load_bundle(path=None):
         if not component_file.exists():
             raise BundleLoadError(f"{key}.json not found in {data}")
         try:
-            bundle[key] = json.loads(component_file.read_text())
+            bundle[key] = json.loads(component_file.read_text(encoding="utf-8"))
         except json.JSONDecodeError as e:
             raise BundleLoadError(f"Invalid JSON in {key}.json: {e}")
 

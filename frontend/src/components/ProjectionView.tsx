@@ -86,7 +86,7 @@ export function ProjectionView({ world }: { world: WorldHook }) {
     return () => window.removeEventListener("keydown", onKey);
   }, [calibrating]);
 
-  const { snapshot, scenario, feedback, status } = world;
+  const { snapshot, scenario, feedback, reactions, status, scenarioError } = world;
   const cx = BOARD_WIDTH / 2;
   const cy = BOARD_HEIGHT / 2;
   const transform = `translate(${cal.dx}px, ${cal.dy}px) rotate(${cal.rot}deg) scale(${cal.sx}, ${cal.sy})`;
@@ -95,9 +95,9 @@ export function ProjectionView({ world }: { world: WorldHook }) {
     <div className={`projector ${overlayOnly ? "projector-overlay" : "projector-screen"}`}>
       <div className="projector-stage" style={{ transform, transformOrigin: "50% 50%" }}>
         {snapshot && scenario ? (
-          <MapProjection scenario={scenario} snapshot={snapshot} feedback={feedback} showBasemap={!overlayOnly} maskFiducials={overlayOnly} />
+          <MapProjection scenario={scenario} snapshot={snapshot} feedback={feedback} reactions={reactions} showBasemap={!overlayOnly} maskFiducials={overlayOnly} />
         ) : (
-          <div className="projector-wait">Waiting for world snapshot…</div>
+          <div className="projector-wait">{scenarioError ? `BACKEND UNAVAILABLE — ${scenarioError}` : "Waiting for world snapshot…"}</div>
         )}
         {calibrating && (
           <svg className="calibration-overlay" viewBox={`0 0 ${BOARD_WIDTH} ${BOARD_HEIGHT}`} preserveAspectRatio="xMidYMid meet">
@@ -117,7 +117,7 @@ export function ProjectionView({ world }: { world: WorldHook }) {
           dx {cal.dx} dy {cal.dy} rot {cal.rot}° sx {cal.sx} sy {cal.sy}
         </div>
       )}
-      {status !== "live" && status !== "mock" && <div className="projector-status">{status.toUpperCase()}</div>}
+      {status !== "live" && <div className="projector-status">{status.toUpperCase()}</div>}
     </div>
   );
 }

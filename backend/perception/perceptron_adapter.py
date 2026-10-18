@@ -66,7 +66,7 @@ def load_classes(catalog_path: Path = CATALOG_PATH) -> dict[str, str]:
     """Perceptron class prompts: one per printed piece, from contracts/token_catalog.json."""
     classes = dict(FALLBACK_CLASSES)
     try:
-        tokens = json.loads(catalog_path.read_text())['tokens']
+        tokens = json.loads(catalog_path.read_text(encoding="utf-8"))['tokens']
     except (OSError, ValueError, KeyError):
         return classes
     for token_type, entry in tokens.items():

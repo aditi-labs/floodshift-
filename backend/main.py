@@ -45,18 +45,12 @@ SCENARIO_ID = os.environ.get("FLOODSHIFT_SCENARIO", "nepal_rasuwa_hot_v1")
 # Optional durable SQLite session (parent directory must exist); empty = in-memory.
 SESSION_PATH = os.environ.get("FLOODSHIFT_SESSION", "")
 
-# Import real WorldService from P4, fallback to mock
-USE_MOCK = os.environ.get("FLOODSHIFT_USE_MOCK", "false").lower() == "true"
-
-if USE_MOCK:
-    from backend.api.mock_world import MockWorldService as WorldService
-else:
-    try:
-        from backend.world.service import WorldService
-    except ImportError:
-        print("WARNING: P4's WorldService not available, using mock")
-        from backend.api.mock_world import MockWorldService as WorldService
-        USE_MOCK = True
+# The real WorldService is the only world. There is no scripted fallback: if it cannot
+# import or initialise, the server refuses to start instead of serving fabricated state.
+if os.environ.get("FLOODSHIFT_USE_MOCK", "").lower() in {"1", "true", "yes"}:
+    raise RuntimeError("FLOODSHIFT_USE_MOCK was removed: the API only serves the real WorldService. "
+                       "Unset it and choose a bundle with FLOODSHIFT_SCENARIO.")
+from backend.world.service import WorldService
 
 
 # =============================================================================
@@ -68,7 +62,7 @@ ws_clients: set[WebSocket] = set()
 ws_seq: int = 0
 ws_seq_lock = asyncio.Lock()  # Protect sequence number
 
-# World service (P4's real implementation or mock)
+# World service (P4's authoritative implementation)
 world_service: WorldService | None = None
 
 # Lock for world mutations
@@ -157,25 +151,21 @@ def _action_result_from_dict(data: dict, action_id: str) -> ActionResult:
 async def lifespan(app: FastAPI):
     """Initialize services on startup."""
     global world_service
-    if USE_MOCK:
-        world_service = WorldService()
-        service_type = "MockWorldService"
-    else:
-        bundle_path = REPO_ROOT / "scenarios" / SCENARIO_ID
+    bundle_path = REPO_ROOT / "scenarios" / SCENARIO_ID
+    try:
         if SESSION_PATH:
             # Corrupt/incompatible sessions raise SessionError: fix or choose a new path.
             world_service = WorldService.open_session(SESSION_PATH, bundle_path)
         else:
             world_service = WorldService.from_bundle(bundle_path)
-        service_type = f"WorldService({SCENARIO_ID}{', session ' + SESSION_PATH if SESSION_PATH else ''})"
-    print(f"FLOODSHIFT API started with {service_type}")
-
-    # Get initial version - handle both dict and Pydantic responses
-    snapshot = world_service.snapshot()
-    if isinstance(snapshot, dict):
-        print(f"Initial world version: {snapshot.get('world_version', 1)}")
-    else:
-        print(f"Initial world version: {snapshot.world_version}")
+        # Validate the very first snapshot against the shared schema before accepting clients.
+        snapshot = _snapshot_model()
+    except Exception as error:
+        world_service = None
+        raise RuntimeError(f"FLOODSHIFT cannot start: WorldService failed to initialise "
+                           f"scenario {SCENARIO_ID!r} at {bundle_path}: {error}") from error
+    service_type = f"WorldService({SCENARIO_ID}{', session ' + SESSION_PATH if SESSION_PATH else ''})"
+    print(f"FLOODSHIFT API started with {service_type}; world version {snapshot.world_version}")
     yield
     print("FLOODSHIFT API shutting down")
 
@@ -285,9 +275,9 @@ async def health():
     return HealthResponse(
         status="ok",
         world_version=version,
-        # The camera pipeline is not started by this server; actions arrive manually.
-        vision_mode="mock" if USE_MOCK else "manual",
-        perceptron_status="not_connected",
+        # The camera pipeline is a separate process; it reports itself via /perception/status.
+        vision_mode=perception_status.get("mode", "manual"),
+        perceptron_status=perception_status.get("perceptron", "not_connected"),
         gemini_status=gemini_status
     )
 
@@ -347,11 +337,6 @@ async def suggest_action(request: SuggestRequest):
         raise HTTPException(status_code=503, detail="World service not initialized")
 
     goal = request.goal_id or 'needs_served'
-    if not hasattr(world_service, 'request_suggestion'):  # mock world
-        suggestion = world_service.suggest(goal)
-        data = suggestion if isinstance(suggestion, dict) or suggestion is None else suggestion.model_dump()
-        return {"has_suggestion": data is not None, "suggestion": data, "world_version": _world_version()}
-
     async with world_lock:
         result = world_service.request_suggestion(goal)
     if result['accepted']:
@@ -423,7 +408,7 @@ async def branch_compare(a: str, b: str):
     return {
         "baseline_snapshot_id": "baseline" if world_service.has_branch("baseline") else None,
         "branches": [{"id": r["id"], "action": ", ".join(r["placed"]) or "no pieces",
-                      **r["metrics"]} for r in comparison["branches"]],
+                      **r["metrics"], "game_score": r["game"]["score"]} for r in comparison["branches"]],
         "delta_from_first": comparison["delta_from_first"],
         "metric_provenance": comparison["metric_provenance"],
     }
@@ -437,16 +422,6 @@ async def narrate(request: NarrateRequest):
     """
     if not world_service:
         raise HTTPException(status_code=503, detail="World service not initialized")
-
-    if not hasattr(world_service, 'frozen_copy'):  # mock world: state-derived text only
-        snapshot = _snapshot_model()
-        answer = (f"The scenario is in '{snapshot.phase.value}' phase with "
-                  f"{snapshot.metrics.blocked_roads} blocked road(s) in this model.")
-        if "bridge" in request.question.lower():
-            suggestion = world_service.suggest('needs_served')
-            answer += (f" The planner suggests a temporary bridge at {suggestion.site_id}." if suggestion
-                       else " No bridge placement currently improves model access.")
-        return NarrateResponse(answer=answer, grounded_in_version=snapshot.world_version)
 
     # P4's read-only tool-calling narrator; never blocks the event loop, never mutates.
     from backend.narration.gemini_adapter import GeminiNarrator
@@ -568,9 +543,10 @@ async def trigger_scan():
     In production, camera runs continuously.
     """
     return {
-        "status": "scan_triggered",
-        "mode": "mock",
-        "message": "Camera not connected. Use mock observations."
+        "status": "not_available",
+        "mode": perception_status.get("mode", "manual"),
+        "message": "This server does not own a camera. Run scripts/run_live_demo.py, or place "
+                   "pieces manually through POST /action (same reducer as a confirmed observation)."
     }
 
 
@@ -661,7 +637,7 @@ async def analyze_prevention(scenario: str = "category_2"):
     if not risk_data or (hasattr(world_service, 'scenario') and not prevention.supports_bundle(world_service.scenario())):
         raise HTTPException(status_code=409, detail=f"No prevention terrain data matches {SCENARIO_ID}")
 
-    # Get bundle (scenario data) - handle both mock and real services
+    # Get bundle (scenario data)
     if hasattr(world_service, 'scenario'):
         bundle = world_service.scenario()
     elif hasattr(world_service, '_bundle'):

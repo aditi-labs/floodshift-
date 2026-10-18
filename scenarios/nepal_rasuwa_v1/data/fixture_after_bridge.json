@@ -389,6 +389,24 @@
         "east_village",
         "crossing_east_road",
         "medical_road"
+      ],
+      "board_uv": [
+        [
+          0.75,
+          0.4
+        ],
+        [
+          0.6,
+          0.5
+        ],
+        [
+          0.35,
+          0.5
+        ],
+        [
+          0.2,
+          0.25
+        ]
       ]
     },
     {
@@ -401,6 +419,28 @@
         "crossing_east_road",
         "depot_west",
         "food_road"
+      ],
+      "board_uv": [
+        [
+          0.75,
+          0.4
+        ],
+        [
+          0.6,
+          0.5
+        ],
+        [
+          0.35,
+          0.5
+        ],
+        [
+          0.1,
+          0.5
+        ],
+        [
+          0.2,
+          0.6
+        ]
       ]
     },
     {
@@ -412,6 +452,24 @@
         "east_village",
         "crossing_east_road",
         "refuge_road"
+      ],
+      "board_uv": [
+        [
+          0.75,
+          0.4
+        ],
+        [
+          0.6,
+          0.5
+        ],
+        [
+          0.35,
+          0.5
+        ],
+        [
+          0.35,
+          0.75
+        ]
       ]
     }
   ],
@@ -426,6 +484,167 @@
     "people_reachable_for_shelter": 8,
     "reachable_communities": 1,
     "road_access_fraction": 0.8571428571428571
+  },
+  "game": {
+    "status": "active",
+    "score": 275,
+    "score_parts": {
+      "access": 120,
+      "needs_met": 180,
+      "communities": 50,
+      "unmet_penalty": 0,
+      "spend_penalty": -75,
+      "ineffective_penalty": 0
+    },
+    "formula": "score = 5\u00b7\u0394access + 10\u00b7\u0394needs_met + 50\u00b7\u0394communities \u2212 2\u00b7unmet \u2212 15\u00b7budget_spent \u2212 40\u00b7ineffective_interventions (\u0394 = versus the same flood stage with no response pieces)",
+    "weights": {
+      "access_per_unit": 5,
+      "need_met_per_unit": 10,
+      "reconnect_per_community": 50,
+      "unmet_penalty_per_unit": 2,
+      "spend_penalty_per_unit": 15,
+      "ineffective_penalty": 40,
+      "unmet_reduction_goal": 0.4
+    },
+    "label": "Game score \u2014 compares strategies in this educational model; not a real outcome metric",
+    "population_unit": "model people units (no verified headcount)",
+    "baseline": {
+      "unmet_food_model": 8,
+      "unmet_medical_model": 2,
+      "unmet_refuge_model": 8,
+      "people_reachable_for_food": 0,
+      "people_reachable_for_medical": 0,
+      "people_reachable_for_shelter": 0,
+      "reachable_communities": 0
+    },
+    "current": {
+      "unmet_food_model": 0,
+      "unmet_medical_model": 0,
+      "unmet_refuge_model": 0,
+      "people_reachable_for_food": 8,
+      "people_reachable_for_medical": 8,
+      "people_reachable_for_shelter": 8,
+      "reachable_communities": 1
+    },
+    "communities_total": 1,
+    "communities_reconnected": 1,
+    "total_need_model": 18,
+    "unmet_total_model": 0,
+    "baseline_unmet_total_model": 18,
+    "budget_total_model": 5,
+    "budget_spent_model": 5,
+    "ineffective_interventions": 0,
+    "interventions": [
+      {
+        "token_id": "bridge",
+        "type": "bridge",
+        "site_id": "crossing_east",
+        "label": "Temporary bridge",
+        "cost_model": 2,
+        "effective": true,
+        "marginal": {
+          "unmet_food_model": -8,
+          "unmet_medical_model": -2,
+          "unmet_refuge_model": -8,
+          "people_reachable_for_food": 8,
+          "people_reachable_for_medical": 8,
+          "people_reachable_for_shelter": 8,
+          "reachable_communities": 1
+        }
+      },
+      {
+        "token_id": "food_shelter",
+        "type": "food_shelter",
+        "site_id": "food_site_west",
+        "label": "Food & water station",
+        "cost_model": 1,
+        "effective": true,
+        "marginal": {
+          "unmet_food_model": -8,
+          "unmet_medical_model": 0,
+          "unmet_refuge_model": 0,
+          "people_reachable_for_food": 8,
+          "people_reachable_for_medical": 0,
+          "people_reachable_for_shelter": 0,
+          "reachable_communities": 0
+        }
+      },
+      {
+        "token_id": "hospital",
+        "type": "hospital",
+        "site_id": "medical_site_west",
+        "label": "Hospital",
+        "cost_model": 1,
+        "effective": true,
+        "marginal": {
+          "unmet_food_model": 0,
+          "unmet_medical_model": -2,
+          "unmet_refuge_model": 0,
+          "people_reachable_for_food": 0,
+          "people_reachable_for_medical": 8,
+          "people_reachable_for_shelter": 0,
+          "reachable_communities": 0
+        }
+      },
+      {
+        "token_id": "shelter",
+        "type": "shelter",
+        "site_id": "shelter_site_west",
+        "label": "Shelter",
+        "cost_model": 1,
+        "effective": true,
+        "marginal": {
+          "unmet_food_model": 0,
+          "unmet_medical_model": 0,
+          "unmet_refuge_model": -8,
+          "people_reachable_for_food": 0,
+          "people_reachable_for_medical": 0,
+          "people_reachable_for_shelter": 8,
+          "reachable_communities": 0
+        }
+      }
+    ],
+    "objectives": [
+      {
+        "id": "restore_access",
+        "label": "Restore access across the flood",
+        "complete": true,
+        "detail": "1 bridge(s) carry a reachable service route"
+      },
+      {
+        "id": "connect_communities",
+        "label": "Connect isolated communities",
+        "complete": true,
+        "detail": "1/1 model communities reach the supply depot"
+      },
+      {
+        "id": "service_coverage",
+        "label": "Establish essential service coverage",
+        "complete": true,
+        "detail": "1/1 communities reach medical, food and shelter"
+      },
+      {
+        "id": "minimize_unmet",
+        "label": "Minimize unmet needs",
+        "complete": true,
+        "detail": "0 of 18 need units unmet (goal \u2264 40% of no-response)"
+      },
+      {
+        "id": "within_budget",
+        "label": "Stay within budget",
+        "complete": true,
+        "detail": "5 of 5 budget spent, 0 ineffective piece(s)"
+      }
+    ],
+    "summary": {
+      "improved": [
+        "Temporary bridge (crossing_east): 8 food, 2 medical, 8 refuge, 1 community reconnected need units served",
+        "Food & water station (food_site_west): 8 food need units served",
+        "Hospital (medical_site_west): 2 medical need units served",
+        "Shelter (shelter_site_west): 8 refuge need units served"
+      ],
+      "unresolved": []
+    }
   },
   "ghost_suggestion": null,
   "provenance_label": "Schematic educational fixture; geography, disruptions, capacities and people are illustrative, not historical measurements.",

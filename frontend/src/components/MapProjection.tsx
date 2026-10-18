@@ -1,8 +1,11 @@
 import { useMemo } from "react";
-import type { RiskZone, ServiceRoute, UV, WorldSnapshot } from "../types/contracts";
+import type { RiskZone, ServiceKind, UV, WorldSnapshot } from "../types/contracts";
 import type { RoadGeometry, ScenarioGeometry } from "../types/scenario";
 import { BOARD_HEIGHT, BOARD_WIDTH, FIDUCIAL_CORNERS, toSvgPoint, uvToPathD, uvToPoints } from "../types/geometry";
-import type { Feedback } from "../hooks/useWorldSocket";
+import type { ActiveReactions, Feedback } from "../hooks/useWorldSocket";
+import { aggregateRouteEdges, chain, polylineLength, SERVICE_ORDER } from "../lib/routeLayers";
+import type { Reaction } from "../lib/worldReactions";
+import { FloodLayer } from "./FloodLayer";
 import { TOKEN_COLORS, TokenGlyph } from "./TokenIcon";
 
 /** Convert UV radius to SVG pixels */
@@ -14,6 +17,7 @@ export interface MapProjectionProps {
   scenario: ScenarioGeometry;
   snapshot: WorldSnapshot;
   feedback?: Feedback[];
+  reactions?: ActiveReactions[];
   /** Draw rivers/roads/pads. Off when projecting onto the printed map (overlays only). */
   showBasemap: boolean;
   /** Black squares over corner fiducials so projected light never washes out ArUco tracking. */
@@ -23,78 +27,62 @@ export interface MapProjectionProps {
   onSiteClick?: (siteId: string) => void;
 }
 
-const SERVICE_OFFSET: Record<ServiceRoute["service"], number> = { medical: -5, food: 0, refuge: 5 };
+export const SERVICE_COLOR: Record<ServiceKind, string> = {
+  medical: "var(--c-medical)",
+  food: "var(--c-food)",
+  refuge: "var(--c-refuge)",
+};
+const STRIPE = 11;
 
 function midpoint(path: UV[]): UV {
   const pts = path.map(([u, v]) => toSvgPoint(u, v));
-  let total = 0;
-  const seg: number[] = [];
+  let half = polylineLength(pts) / 2;
   for (let i = 1; i < pts.length; i++) {
     const d = Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
-    seg.push(d);
-    total += d;
-  }
-  let half = total / 2;
-  for (let i = 0; i < seg.length; i++) {
-    if (half <= seg[i]) {
-      const t = seg[i] ? half / seg[i] : 0;
-      const a = path[i];
-      const b = path[i + 1];
-      return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+    if (half <= d) {
+      const t = d ? half / d : 0;
+      return [path[i - 1][0] + (path[i][0] - path[i - 1][0]) * t, path[i - 1][1] + (path[i][1] - path[i - 1][1]) * t];
     }
-    half -= seg[i];
+    half -= d;
   }
   return path[0];
 }
 
-/** Chain edge geometries into one ordered polyline for an animated route. */
-function chain(roads: Map<string, RoadGeometry>, edgeIds: string[]): UV[] {
-  const out: UV[] = [];
-  for (const id of edgeIds) {
-    const r = roads.get(id);
-    if (!r) continue;
-    let p = r.path;
-    if (out.length) {
-      const last = out[out.length - 1];
-      const dStart = Math.hypot(p[0][0] - last[0], p[0][1] - last[1]);
-      const dEnd = Math.hypot(p[p.length - 1][0] - last[0], p[p.length - 1][1] - last[1]);
-      if (dEnd < dStart) p = [...p].reverse();
-      out.push(...p.slice(1));
-    } else {
-      // Orient the first segment so its end meets the next edge.
-      const next = roads.get(edgeIds[1] ?? "");
-      if (next) {
-        const end = p[p.length - 1];
-        const touches = (q: UV) => Math.hypot(q[0] - end[0], q[1] - end[1]) < 1e-6;
-        if (!touches(next.path[0]) && !touches(next.path[next.path.length - 1])) p = [...p].reverse();
-      }
-      out.push(...p);
-    }
-  }
-  return out;
-}
-
-export function MapProjection({ scenario, snapshot, feedback = [], showBasemap, maskFiducials, compact, onSiteClick }: MapProjectionProps) {
+export function MapProjection({ scenario, snapshot, feedback = [], reactions = [], showBasemap, maskFiducials, compact, onSiteClick }: MapProjectionProps) {
   const roads = useMemo(() => new Map(scenario.roads.map((r) => [r.id, r])), [scenario]);
   const sites = useMemo(() => new Map(scenario.sites.map((s) => [s.id, s])), [scenario]);
   const blocked = snapshot.edges.filter((e) => e.blocked);
   const active = snapshot.phase === "disaster_active";
   const routes = snapshot.service_routes ?? [];
+  const { open, cut } = useMemo(() => aggregateRouteEdges(routes, roads), [routes, roads]);
   const anyCut = routes.some((r) => !r.reachable);
   const allOk = routes.length > 0 && routes.every((r) => r.reachable);
   const ghost = snapshot.ghost_suggestion;
   const ghostSite = ghost ? sites.get(ghost.site_id) : undefined;
   const fs = compact ? 0.8 : 1;
+  const latest = reactions[reactions.length - 1];
+  const game = snapshot.game?.status === "active" ? snapshot.game : null;
+  const stages = Math.max(1, (scenario.stage_count ?? 2) - 1);
 
-  const banner = !active
-    ? "NEPAL 2026 · PLACE START TO BEGIN"
-    : ghost
-      ? "PLACE BRIDGE HERE"
-      : allOk
-        ? "RECONNECTED"
-        : anyCut
-          ? "ROUTE BLOCKED"
-          : "NEPAL 2026 · SCENARIO ACTIVE";
+  const banner = latest?.headline
+    ? latest.headline.text
+    : !active
+      ? "PLACE START TO BEGIN THE FLOOD"
+      : ghost
+        ? "PLACE BRIDGE HERE"
+        : allOk
+          ? "ALL COMMUNITIES CONNECTED"
+          : anyCut
+            ? "ROUTES BLOCKED BY FLOOD"
+            : "FLOOD ACTIVE";
+  const bannerTone = latest?.headline ? `banner-${latest.headline.tone}` : allOk ? "banner-good" : anyCut ? "banner-bad" : "";
+
+  // Population access, read straight from backend service routes.
+  const access = useMemo(() => {
+    const map = new Map<string, Partial<Record<ServiceKind, boolean>>>();
+    for (const r of routes) map.set(r.population_id, { ...map.get(r.population_id), [r.service]: r.reachable });
+    return map;
+  }, [routes]);
 
   return (
     <svg
@@ -112,10 +100,6 @@ export function MapProjection({ scenario, snapshot, feedback = [], showBasemap, 
             <feMergeNode in="SourceGraphic" />
           </feMerge>
         </filter>
-        <pattern id="hazard-hatch" width="14" height="14" patternUnits="userSpaceOnUse" patternTransform="rotate(35)">
-          <rect width="14" height="14" fill="var(--c-hazard-fill)" />
-          <line x1="0" y1="0" x2="0" y2="14" stroke="var(--c-hazard)" strokeWidth="2" opacity="0.5" />
-        </pattern>
       </defs>
 
       {/* 1 · Basemap (screen mode only — the paper already has this printed) */}
@@ -128,6 +112,39 @@ export function MapProjection({ scenario, snapshot, feedback = [], showBasemap, 
           {scenario.roads.map((r) => (
             <path key={r.id} d={uvToPathD(r.path)} className={`road road-${r.kind}`} />
           ))}
+          {scenario.labels.map((l) => {
+            const p = toSvgPoint(...l.board_uv);
+            return (
+              <text key={l.text} x={p.x} y={p.y} className="map-label" fontSize={13 * fs}>
+                {l.text}
+              </text>
+            );
+          })}
+        </g>
+      )}
+
+      {/* 1.5 · Risk zones (prevention data): colored circles that adapt as tokens provide protection */}
+      {!active && snapshot.risk_zones && snapshot.risk_zones.length > 0 && (
+        <g className="layer-risk-zones">
+          {snapshot.risk_zones.map((zone: RiskZone) => {
+            const p = toSvgPoint(...zone.board_uv_center);
+            const r = uvRadiusToSvg(zone.radius_uv);
+            return (
+              <g key={zone.zone_id} className={`risk-zone risk-${zone.risk_level} ${zone.is_protected ? "protected" : ""}`}>
+                <circle cx={p.x} cy={p.y} r={r} fill={zone.color} fillOpacity={0.25} stroke={zone.color} strokeWidth={2} strokeOpacity={0.7} />
+                {zone.is_protected && <circle cx={p.x} cy={p.y} r={r + 4} fill="none" stroke="#00CC00" strokeWidth={3} strokeDasharray="8 4" className="protection-ring" />}
+              </g>
+            );
+          })}
+        </g>
+      )}
+
+      {/* 2 · Simulated flood: illustrated, opaque, placed by backend hazard geometry */}
+      <FloodLayer scenario={scenario} stage={snapshot.simulation_stage} active={active} />
+
+      {/* 2.5 · Pads above the water so placement targets stay visible */}
+      {showBasemap && (
+        <g className="layer-sites">
           {scenario.sites.map((s) => {
             const p = toSvgPoint(...s.board_uv);
             const occupied = snapshot.tokens.some((t) => t.site_id === s.id);
@@ -142,102 +159,29 @@ export function MapProjection({ scenario, snapshot, feedback = [], showBasemap, 
               </g>
             );
           })}
-          {scenario.labels.map((l) => {
-            const p = toSvgPoint(...l.board_uv);
-            return (
-              <text key={l.text} x={p.x} y={p.y} className="map-label" fontSize={13 * fs}>
-                {l.text}
-              </text>
-            );
-          })}
         </g>
       )}
 
-      {/* Clickable site targets for manual/mouse fallback (same WorldAction as camera). */}
-      {onSiteClick && (
-        <g className="layer-hit">
-          {scenario.sites.map((s) => {
-            const p = toSvgPoint(...s.board_uv);
-            return <circle key={s.id} cx={p.x} cy={p.y} r={28} className="site-hit" onClick={() => onSiteClick(s.id)}><title>{s.label}</title></circle>;
-          })}
-        </g>
-      )}
-
-      {/* 1.5 · Risk zones: colored circles that adapt as tokens provide protection */}
-      {snapshot.risk_zones && snapshot.risk_zones.length > 0 && (
-        <g className="layer-risk-zones">
-          {snapshot.risk_zones.map((zone: RiskZone) => {
-            const p = toSvgPoint(...zone.board_uv_center);
-            const r = uvRadiusToSvg(zone.radius_uv);
-            return (
-              <g key={zone.zone_id} className={`risk-zone risk-${zone.risk_level} ${zone.is_protected ? "protected" : ""}`}>
-                <circle
-                  cx={p.x}
-                  cy={p.y}
-                  r={r}
-                  fill={zone.color}
-                  fillOpacity={0.35}
-                  stroke={zone.color}
-                  strokeWidth={2}
-                  strokeOpacity={0.7}
-                />
-                {/* Protection indicator ring */}
-                {zone.is_protected && (
-                  <circle
-                    cx={p.x}
-                    cy={p.y}
-                    r={r + 4}
-                    fill="none"
-                    stroke="#00CC00"
-                    strokeWidth={3}
-                    strokeDasharray="8 4"
-                    className="protection-ring"
-                  />
-                )}
-                {/* Population label */}
-                {!compact && zone.population_exposed > 50 && (
-                  <text
-                    x={p.x}
-                    y={p.y + r + 16}
-                    className="risk-label"
-                    fontSize={10 * fs}
-                    textAnchor="middle"
-                    fill={zone.color}
-                  >
-                    ~{zone.population_exposed} residents (model est.)
-                  </text>
-                )}
-              </g>
-            );
-          })}
-        </g>
-      )}
-
-      {/* 2 · Simulated hazard — dashed, animated: model, not observation */}
-      {active &&
-        scenario.hazard_zones
-          .filter((h) => h.stage <= snapshot.simulation_stage)
-          .map((h) => (
-            <g key={h.id} className="layer-hazard">
-              <path d={uvToPathD(h.polygon, true)} fill="url(#hazard-hatch)" className="hazard-fill" />
-              <path d={uvToPathD(h.polygon, true)} className="hazard-edge" />
-            </g>
-          ))}
-
-      {/* 3 · Service routes: computed by backend, drawn here */}
+      {/* 3 · Service routes from the backend: one line per mapped edge; shared edges striped */}
       <g className="layer-routes">
-        {routes.map((r) => {
-          const pts = chain(roads, r.edge_ids);
-          if (pts.length < 2) return null;
-          return (
-            <polyline
-              key={`${r.population_id}-${r.service}`}
-              points={uvToPoints(pts)}
-              transform={`translate(0 ${SERVICE_OFFSET[r.service]})`}
-              className={`route route-${r.service} ${r.reachable ? "route-ok" : "route-cut"}`}
+        {cut.map((e) => (
+          <path key={`cut-${e.edge_id}`} d={uvToPathD(e.path)} className="route route-cut" />
+        ))}
+        {open.map((e) => (
+          <path key={`case-${e.edge_id}`} d={uvToPathD(e.path)} className="route-casing" />
+        ))}
+        {open.map((e) =>
+          e.services.map((s, i) => (
+            <path
+              key={`${e.edge_id}-${s}`}
+              d={uvToPathD(e.path)}
+              className={`route route-ok route-${s}`}
+              stroke={SERVICE_COLOR[s]}
+              strokeDasharray={e.services.length > 1 ? `${STRIPE} ${STRIPE * (e.services.length - 1)}` : undefined}
+              strokeDashoffset={-i * STRIPE}
             />
-          );
-        })}
+          )),
+        )}
       </g>
 
       {/* 4 · Closed roads: thick red dash + X */}
@@ -249,7 +193,8 @@ export function MapProjection({ scenario, snapshot, feedback = [], showBasemap, 
           return (
             <g key={e.id}>
               <path d={uvToPathD(r.path)} className="road-blocked" />
-              <path d={`M${m.x - 9} ${m.y - 9} L${m.x + 9} ${m.y + 9} M${m.x + 9} ${m.y - 9} L${m.x - 9} ${m.y + 9}`} className="road-x" />
+              <circle cx={m.x} cy={m.y} r={13} className="road-x-badge" />
+              <path d={`M${m.x - 7} ${m.y - 7} L${m.x + 7} ${m.y + 7} M${m.x + 7} ${m.y - 7} L${m.x - 7} ${m.y + 7}`} className="road-x" />
             </g>
           );
         })}
@@ -274,25 +219,44 @@ export function MapProjection({ scenario, snapshot, feedback = [], showBasemap, 
         </g>
       )}
 
-      {/* 6 · Tokens + facility capacity + population needs */}
+      {/* 6 · Tokens + facility capacity + population access */}
       <g className="layer-tokens">
         {snapshot.tokens.map((t) => {
           const p = toSvgPoint(...t.board_uv);
-          const fac = snapshot.facilities.find((f) => f.site_id === t.site_id);
-          const demand = snapshot.population_demand.find((d) => d.id === t.site_id);
+          const fac = snapshot.facilities.find((f) => f.id === t.id) ?? snapshot.facilities.find((f) => f.site_id === t.site_id);
+          const demand = t.type === "person" ? snapshot.population_demand.find((d) => d.id === t.site_id) : undefined;
+          const services = demand ? access.get(demand.id) : undefined;
+          const isolated = !!services && Object.values(services).length > 0 && Object.values(services).every((v) => !v);
           return (
-            <g key={t.id} transform={`translate(${p.x} ${p.y})`} className={`token token-${t.status}`}>
+            <g key={t.id} transform={`translate(${p.x} ${p.y})`} className={`token token-${t.status} token-type-${t.type}`}>
+              {fac && fac.reachable && (fac.active ?? true) && <circle r={36} className={`coverage-halo coverage-${t.type}`} />}
+              {isolated && <circle r={34} className="isolated-ring" />}
               <circle r={22} className="token-ring" style={{ stroke: TOKEN_COLORS[t.type] }} />
               <g transform={`rotate(${t.rotation_deg ?? 0})`}>
                 <TokenGlyph type={t.type} size={20} />
               </g>
               {fac && (
-                <g transform="translate(0 38)" className={`facility-badge ${fac.reachable ? "ok" : "cut"}`}>
+                <g transform="translate(0 38)" className={`facility-badge ${fac.reachable && (fac.active ?? true) ? "ok" : "cut"}`}>
                   <rect x={-34} y={-10} width={68} height={20} rx={10} />
                   <text fontSize={11 * fs} dy="4">
-                    {fac.reachable ? "✓" : "✕"} {fac.used_capacity_model}/{fac.capacity_model}
+                    {fac.reachable ? "" : "✕ "}
+                    {fac.used_capacity_model}/{fac.capacity_model}
                   </text>
                 </g>
+              )}
+              {services && (
+                <g transform="translate(-21 -36)" className="access-dots">
+                  {SERVICE_ORDER.map((s, i) =>
+                    s in services ? (
+                      <circle key={s} cx={i * 21} r={6} className={services[s] ? "dot-ok" : "dot-cut"} style={{ fill: services[s] ? SERVICE_COLOR[s] : undefined, stroke: SERVICE_COLOR[s] }} />
+                    ) : null,
+                  )}
+                </g>
+              )}
+              {isolated && !compact && (
+                <text y={-54} className="isolated-label" fontSize={12}>
+                  CUT OFF
+                </text>
               )}
               {demand && demand.headcount_known !== false && <NeedBars demand={demand} metrics={snapshot.metrics} fs={fs} />}
             </g>
@@ -300,7 +264,18 @@ export function MapProjection({ scenario, snapshot, feedback = [], showBasemap, 
         })}
       </g>
 
-      {/* 7 · Transient feedback: recognized / accepted / rejected */}
+      {/* 7 · Environmental reactions derived from snapshot differences */}
+      <g className="layer-reactions">
+        {reactions.map((set) => (
+          <g key={set.key}>
+            {set.reactions.map((r) => (
+              <ReactionMark key={r.id} r={r} roads={roads} />
+            ))}
+          </g>
+        ))}
+      </g>
+
+      {/* 8 · Transient feedback: recognized / accepted / rejected */}
       <g className="layer-feedback">
         {feedback.map((f) => {
           const p = toSvgPoint(...f.board_uv);
@@ -315,14 +290,25 @@ export function MapProjection({ scenario, snapshot, feedback = [], showBasemap, 
         })}
       </g>
 
-      {/* 8 · Banner + disclaimer (kept in the margins) */}
+      {/* 9 · Banner, minimal game line and provenance (kept in the margins) */}
       {!compact && (
         <g className="layer-chrome">
-          <text x={BOARD_WIDTH / 2} y={30} className={`banner ${allOk ? "banner-ok" : anyCut ? "banner-cut" : ""}`}>
+          <text key={latest?.key ?? "steady"} x={BOARD_WIDTH / 2} y={34} className={`banner ${bannerTone} ${latest?.headline ? "banner-pop" : ""}`}>
             {banner}
           </text>
+          {latest?.scoreDelta != null && (
+            <text key={`d-${latest.key}`} x={BOARD_WIDTH / 2} y={62} className={`score-delta ${latest.scoreDelta > 0 ? "up" : "down"}`}>
+              {latest.scoreDelta > 0 ? "+" : ""}
+              {latest.scoreDelta} GAME POINTS
+            </text>
+          )}
+          {game && latest?.scoreDelta == null && (
+            <text x={BOARD_WIDTH / 2} y={60} className="hud-line">
+              SCORE {game.score} · STAGE {snapshot.simulation_stage}/{stages} · ACCESS {game.current?.reachable_communities ?? 0}/{game.communities_total ?? 0} · BUDGET {snapshot.budget_remaining_model ?? "–"}
+            </text>
+          )}
           <text x={BOARD_WIDTH / 2} y={BOARD_HEIGHT - 10} className="disclaimer">
-            {snapshot.provenance_label} · {scenario.data_label === "SCHEMATIC" ? "schematic layout" : "HOT/OSM-derived"} · not a real disaster prediction
+            Map: {scenario.data_label === "SCHEMATIC" ? "schematic layout" : "HOT/OSM mapped"} · Flood: simulated scenario (illustrative) · Outcomes: model estimates, not a prediction
           </text>
         </g>
       )}
@@ -332,12 +318,71 @@ export function MapProjection({ scenario, snapshot, feedback = [], showBasemap, 
           const p = toSvgPoint(u, v);
           return <rect key={i} x={p.x - 28} y={p.y - 28} width={56} height={56} fill="#000" />;
         })}
+
+      {/* Clickable site targets for manual/mouse fallback (same WorldAction as camera). */}
+      {onSiteClick && (
+        <g className="layer-hit">
+          {scenario.sites.map((s) => {
+            const p = toSvgPoint(...s.board_uv);
+            return (
+              <circle key={s.id} cx={p.x} cy={p.y} r={28} className="site-hit" onClick={() => onSiteClick(s.id)}>
+                <title>{s.label}</title>
+              </circle>
+            );
+          })}
+        </g>
+      )}
     </svg>
   );
 }
 
+function ReactionMark({ r, roads }: { r: Reaction; roads: Map<string, RoadGeometry> }) {
+  const at = r.board_uv ? toSvgPoint(...r.board_uv) : null;
+  const color = r.service ? SERVICE_COLOR[r.service] : r.tone === "good" ? "var(--c-ok)" : r.tone === "bad" ? "var(--c-cut)" : "#fff";
+  switch (r.kind) {
+    case "edge_restored":
+    case "edge_blocked":
+      return (
+        <g className={`rx rx-${r.kind}`}>
+          {(r.edge_ids ?? []).map((id) => {
+            const road = roads.get(id);
+            return road ? <path key={id} d={uvToPathD(road.path)} className="rx-edge" /> : null;
+          })}
+          {at && [0, 1, 2].map((i) => <circle key={i} cx={at.x} cy={at.y} r={20} className="rx-pulse" style={{ animationDelay: `${i * 0.28}s` }} />)}
+        </g>
+      );
+    case "route_opened":
+    case "route_lost": {
+      const pts = r.path && r.path.length >= 2 ? r.path : chain(roads, r.edge_ids ?? []);
+      if (pts.length < 2) return null;
+      const len = polylineLength(pts.map(([u, v]) => toSvgPoint(u, v)));
+      return (
+        <polyline
+          points={uvToPoints(pts)}
+          className={`rx rx-${r.kind}`}
+          stroke={color}
+          // Services draw one after another so shared stretches show every colour.
+          style={{ ["--len" as string]: `${len.toFixed(1)}`, animationDelay: r.service ? `${0.2 + SERVICE_ORDER.indexOf(r.service) * 0.35}s, 3.4s` : undefined }}
+        />
+      );
+    }
+    case "coverage":
+      return at ? (
+        <g className={`rx rx-coverage rx-${r.tone}`} transform={`translate(${at.x} ${at.y})`}>
+          <circle r={30} className="rx-halo" stroke={color} fill={color} />
+          <circle r={30} className="rx-halo rx-halo-2" stroke={color} fill="none" />
+        </g>
+      ) : null;
+    case "isolated":
+      return at ? <circle cx={at.x} cy={at.y} r={30} className="rx rx-isolated" /> : null;
+    case "token_removed":
+      return at ? <circle cx={at.x} cy={at.y} r={26} className="rx rx-removed" /> : null;
+    default:
+      return null;
+  }
+}
+
 function NeedBars({ demand, metrics, fs }: { demand: WorldSnapshot["population_demand"][number]; metrics: WorldSnapshot["metrics"]; fs: number }) {
-  // Needs are read straight from the snapshot; bars show unmet / total for this node.
   // Per-node unmet comes from the backend; global metrics are only a fallback.
   const rows = [
     { k: "FOOD", need: demand.need_food, unmet: demand.unmet_food ?? metrics.unmet_food_model, c: "var(--c-food)" },
@@ -365,3 +410,4 @@ function NeedBars({ demand, metrics, fs }: { demand: WorldSnapshot["population_d
     </g>
   );
 }
+
