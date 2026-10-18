@@ -482,3 +482,173 @@ async def perception_status():
         "calibration": "not_calibrated",
         "mode": "mock"
     }
+
+
+# =============================================================================
+# PREVENTION MODE ENDPOINTS
+# =============================================================================
+
+# Lazy load prevention module (optional feature)
+_prevention_module = None
+_risk_data = None
+
+
+def _get_prevention():
+    """Lazy load prevention planning module."""
+    global _prevention_module, _risk_data
+    if _prevention_module is None:
+        try:
+            from backend.planning import prevention as prev_mod
+            _prevention_module = prev_mod
+            _risk_data = prev_mod.load_risk_data()
+        except ImportError:
+            _prevention_module = False
+    return _prevention_module, _risk_data
+
+
+@app.get("/prevention/risk-map")
+async def get_risk_map():
+    """
+    Get risk overlay data for projection.
+    Returns risk zones with flood probability and population exposure.
+    """
+    if not world_service:
+        raise HTTPException(status_code=503, detail="World service not initialized")
+
+    prevention, risk_data = _get_prevention()
+    if not prevention or not risk_data:
+        return {"available": False, "risk_zones": [], "message": "Prevention mode not configured"}
+
+    # Get bundle (scenario data)
+    if hasattr(world_service, 'scenario'):
+        bundle = world_service.scenario()
+    elif hasattr(world_service, '_bundle'):
+        bundle = world_service._bundle
+    else:
+        bundle = {}
+
+    zones = prevention.get_risk_zones(bundle, risk_data)
+
+    return {
+        "available": True,
+        "risk_zones": zones,
+        "scenarios": list(risk_data.get('disaster_scenarios', {}).keys())
+    }
+
+
+@app.post("/prevention/analyze")
+async def analyze_prevention(scenario: str = "category_2"):
+    """
+    Run what-if scenario analysis.
+    Shows vulnerability and effectiveness of current prevention measures.
+    """
+    if not world_service:
+        raise HTTPException(status_code=503, detail="World service not initialized")
+
+    prevention, risk_data = _get_prevention()
+    if not prevention or not risk_data:
+        raise HTTPException(status_code=501, detail="Prevention mode not available")
+
+    # Get bundle (scenario data) - handle both mock and real services
+    if hasattr(world_service, 'scenario'):
+        bundle = world_service.scenario()
+    elif hasattr(world_service, '_bundle'):
+        bundle = world_service._bundle
+    else:
+        bundle = risk_data  # Fallback to risk data structure
+
+    # Get current state
+    raw_snapshot = world_service.snapshot()
+    if isinstance(raw_snapshot, dict):
+        state = {'tokens': {t.get('id', str(i)): t for i, t in enumerate(raw_snapshot.get('tokens', []))}}
+    else:
+        state = {'tokens': {}}
+
+    vulnerability = prevention.calculate_vulnerability_score(bundle, state, risk_data)
+    lives_at_risk = prevention.calculate_lives_at_risk(bundle, risk_data, scenario)
+    effectiveness = prevention.calculate_prevention_effectiveness(bundle, state, risk_data, scenario)
+
+    return {
+        "scenario": scenario,
+        "vulnerability_score": round(vulnerability, 2),
+        "lives_at_risk": lives_at_risk,
+        "lives_protected": effectiveness['lives_protected'],
+        "evacuation_routes_secured": effectiveness.get('evacuation_routes_secured', 0),
+        "shelters_ready": effectiveness.get('shelters_ready', 0),
+        "effectiveness_score": effectiveness['effectiveness_score']
+    }
+
+
+@app.get("/prevention/suggestions")
+async def get_prevention_suggestions(scenario: str = "category_2"):
+    """
+    Get prevention placement recommendations.
+    Returns optimal next prevention action based on risk analysis.
+    """
+    if not world_service:
+        raise HTTPException(status_code=503, detail="World service not initialized")
+
+    prevention, risk_data = _get_prevention()
+    if not prevention or not risk_data:
+        raise HTTPException(status_code=501, detail="Prevention mode not available")
+
+    # Get bundle and state
+    if hasattr(world_service, 'scenario'):
+        bundle = world_service.scenario()
+    elif hasattr(world_service, '_bundle'):
+        bundle = world_service._bundle
+    else:
+        bundle = risk_data
+
+    raw_snapshot = world_service.snapshot()
+    if isinstance(raw_snapshot, dict):
+        state = {'tokens': {t.get('id', str(i)): t for i, t in enumerate(raw_snapshot.get('tokens', []))}}
+    else:
+        state = {'tokens': {}}
+
+    suggestion = prevention.best_prevention_suggestion(bundle, state, risk_data, scenario)
+
+    if suggestion:
+        return {
+            "has_suggestion": True,
+            "suggestion": suggestion,
+            "scenario": scenario
+        }
+    else:
+        return {
+            "has_suggestion": False,
+            "suggestion": None,
+            "message": "All prevention measures already in place or no high-impact options available"
+        }
+
+
+@app.post("/prevention/compare")
+async def compare_prevention_outcomes(scenario: str = "category_2"):
+    """
+    Compare prevention vs no-prevention outcomes.
+    Shows lives saved, cost avoided, and ROI of prevention measures.
+    """
+    if not world_service:
+        raise HTTPException(status_code=503, detail="World service not initialized")
+
+    prevention, risk_data = _get_prevention()
+    if not prevention or not risk_data:
+        raise HTTPException(status_code=501, detail="Prevention mode not available")
+
+    # Get bundle and state
+    if hasattr(world_service, 'scenario'):
+        bundle = world_service.scenario()
+    elif hasattr(world_service, '_bundle'):
+        bundle = world_service._bundle
+    else:
+        bundle = risk_data
+
+    raw_snapshot = world_service.snapshot()
+    if isinstance(raw_snapshot, dict):
+        state = {'tokens': {t.get('id', str(i)): t for i, t in enumerate(raw_snapshot.get('tokens', []))}}
+    else:
+        state = {'tokens': {}}
+
+    comparison = prevention.compare_outcomes(bundle, state, risk_data, scenario)
+
+    return comparison

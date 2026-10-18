@@ -38,6 +38,7 @@ class SiteKind(str, Enum):
 
 
 class Phase(str, Enum):
+    PREVENTION = "prevention"  # Pre-disaster planning mode
     READY = "ready"
     DISASTER_ACTIVE = "disaster_active"
 
@@ -203,6 +204,77 @@ class WorldSnapshot(BaseModel):
     ghost_suggestion: GhostSuggestion | None = None
     narration_event: NarrationEvent | None = None
     provenance_label: str = "Historical map data; intervention outcomes are illustrative"
+
+    # Prevention mode fields
+    mode: Literal["prevention", "relief"] = "relief"
+    risk_zones: list["RiskZone"] = []
+    prevention_metrics: "PreventionMetrics | None" = None
+    prevention_comparison: "PreventionComparison | None" = None
+
+
+# =============================================================================
+# PREVENTION MODE - Disaster prevention planning
+# =============================================================================
+
+class RiskLevel(str, Enum):
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    CRITICAL = "critical"
+
+
+class RiskZone(BaseModel):
+    """Risk overlay zone for projection"""
+    zone_id: str
+    board_uv_center: tuple[float, float]
+    radius_uv: float
+    risk_level: RiskLevel
+    flood_probability: float  # 0-1
+    population_exposed: int
+    elevation_m: float | None = None
+
+
+class PreventionMetrics(BaseModel):
+    """Metrics for prevention planning mode"""
+    vulnerability_score: float = 0.0  # 0=resilient, 1=fragile
+    lives_at_risk: int = 0
+    lives_protected: int = 0
+    evacuation_time_minutes: int = 0
+    infrastructure_survival_rate: float = 0.0  # 0-1
+    prevention_cost_model: int = 0
+    cost_per_life_protected: float = 0.0
+
+
+class ScenarioOutcome(BaseModel):
+    """Outcome of a simulated disaster scenario"""
+    scenario_id: str
+    severity: Literal["category_1", "category_2", "category_3"]
+    casualties_model: int
+    infrastructure_damaged: int
+    evacuation_time_minutes: int
+    recovery_cost_model: int
+
+
+class PreventionComparison(BaseModel):
+    """Side-by-side comparison of outcomes"""
+    scenario_id: str
+    without_prevention: ScenarioOutcome
+    with_prevention: ScenarioOutcome
+    lives_saved: int
+    cost_avoided: int
+    prevention_investment: int
+    roi_ratio: float  # (cost_avoided - investment) / investment
+
+
+class PreventionSuggestion(BaseModel):
+    """AI-recommended prevention placement"""
+    token_type: TokenType
+    site_id: str
+    board_uv: tuple[float, float]
+    reason_code: str
+    effectiveness: float  # 0-1, how much risk is reduced
+    lives_protected: int
+    cost_model: int
 
 
 # =============================================================================

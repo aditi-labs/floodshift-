@@ -824,6 +824,61 @@ python backend/perception/pipeline.py
 
 ---
 
+## 07c. DISASTER PREVENTION MODE (Person 3 Implementation)
+
+**Purpose:** Help officials plan evacuation and resource pre-positioning BEFORE disaster strikes.
+
+### Key Concept: Same Tokens, Different Meaning
+
+| Token | Relief Mode | Prevention Mode |
+|-------|-------------|-----------------|
+| `hospital` | Deploy medical team | Pre-position medical supplies |
+| `shelter` | Open emergency shelter | Designate evacuation point |
+| `food_shelter` | Distribute food | Stock emergency supplies |
+| `bridge` | Temporary repair | Reinforce evacuation route |
+| `person` | People needing help | Population center to protect |
+
+### Projection Colors (P2 renders)
+
+| Color | Hex | Meaning |
+|-------|-----|---------|
+| Red | `#FF0000` | Critical risk zone |
+| Orange | `#FF6600` | High risk |
+| Yellow | `#FFCC00` | Medium risk |
+| Green | `#00CC00` | Safe / Protected |
+
+### API Endpoints
+
+```
+GET  /prevention/risk-map      → Risk zones with UV coords + colors
+POST /prevention/analyze       → Vulnerability score (0-1)
+GET  /prevention/suggestions   → What token to place next
+POST /prevention/compare       → With vs without preparation outcomes
+```
+
+### Key Files (Person 3 owns)
+
+| File | Purpose |
+|------|---------|
+| `backend/planning/prevention.py` | Prevention planning engine |
+| `scenarios/nepal_rasuwa_v1/data/risk.json` | Risk zones and evacuation data |
+| `docs/PREVENTION_MODE_SPEC.md` | Full specification |
+
+### Demo Metrics
+
+- **Baseline:** 45 casualties, 180 min evacuation time
+- **With preparation:** 12 casualties, 95 min evacuation
+- **Impact:** 33 lives saved
+
+### Integration with Relief Mode
+
+Prevention mode is **additive** — no changes to existing relief flow:
+1. New `Phase.PREVENTION` added (existing phases unchanged)
+2. New optional fields in `WorldSnapshot` (defaults to relief mode)
+3. New `/prevention/*` endpoints (existing endpoints unchanged)
+
+---
+
 # 08. CAMERA, BOARD, PROJECTOR — PRECISE HARDWARE CALIBRATION
 
 ## Physical rig
