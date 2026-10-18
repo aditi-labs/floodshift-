@@ -251,6 +251,138 @@ def _get_fallback_risk_zones(risk_data: dict) -> list[dict]:
     return risk_data.get('risk_zones', [])
 
 
+def calculate_protected_zones(
+    base_zones: list[dict],
+    placed_tokens: list[dict],
+    bundle: dict
+) -> list[dict]:
+    """
+    Calculate updated risk zones based on placed token protection.
+
+    Protection effects (probability reduction):
+    - shelter: -0.20 to nearby zones (evacuation point exists)
+    - hospital: -0.15 to nearby zones (medical access)
+    - food_shelter: -0.10 to nearby zones (supplies available)
+    - bridge: -0.18 to connected zones (evacuation route)
+
+    Returns updated zones with new probabilities, colors, and is_protected flag.
+    """
+    if not base_zones:
+        return []
+
+    # Build node -> tokens mapping
+    node_protection = {}  # node_id -> total protection reduction
+    sites = {s.get('id'): s for s in bundle.get('sites', [])}
+
+    # Calculate protection from each placed token
+    for token in placed_tokens:
+        token_type = token.get('type')
+        site_id = token.get('site_id')
+
+        # Find which node this token affects
+        affected_nodes = []
+
+        if site_id and site_id in sites:
+            site = sites[site_id]
+            node_id = site.get('node_id')
+            if node_id:
+                affected_nodes.append(node_id)
+
+        # Also check token board_uv proximity to zones
+        token_uv = token.get('board_uv', [0.5, 0.5])
+        if isinstance(token_uv, (list, tuple)) and len(token_uv) >= 2:
+            for zone in base_zones:
+                zone_uv = zone.get('board_uv_center', (0.5, 0.5))
+                # Calculate distance in UV space
+                dist = ((token_uv[0] - zone_uv[0])**2 + (token_uv[1] - zone_uv[1])**2)**0.5
+                # Token protects zones within 0.15 UV distance
+                if dist < 0.15:
+                    node_id = zone.get('node_id')
+                    if node_id and node_id not in affected_nodes:
+                        affected_nodes.append(node_id)
+
+        # Apply protection based on token type
+        protection = 0.0
+        if token_type == 'shelter':
+            protection = 0.20
+        elif token_type == 'hospital':
+            protection = 0.15
+        elif token_type == 'food_shelter':
+            protection = 0.10
+        elif token_type == 'bridge':
+            protection = 0.18
+
+        for node_id in affected_nodes:
+            node_protection[node_id] = node_protection.get(node_id, 0) + protection
+
+    # Update zones with protection
+    updated_zones = []
+    for zone in base_zones:
+        node_id = zone.get('node_id', '')
+        base_prob = zone.get('flood_probability', 0.5)
+        protection = min(0.5, node_protection.get(node_id, 0))  # Cap at 50% reduction
+
+        new_prob = max(0.05, base_prob - protection)
+        is_protected = protection > 0
+
+        # Determine new risk level and color
+        if new_prob >= 0.7:
+            risk_level = 'critical'
+            color = '#FF0000'
+        elif new_prob >= 0.5:
+            risk_level = 'high'
+            color = '#FF6600'
+        elif new_prob >= 0.3:
+            risk_level = 'medium'
+            color = '#FFCC00'
+        else:
+            risk_level = 'low'
+            color = '#66CC66'
+
+        updated_zones.append({
+            **zone,
+            'flood_probability': round(new_prob, 3),
+            'base_probability': base_prob,
+            'risk_level': risk_level,
+            'color': color,
+            'color_hex': color,  # Backward compatibility
+            'is_protected': is_protected
+        })
+
+    return sorted(updated_zones, key=lambda z: -z['flood_probability'])
+
+
+def get_risk_zones_for_snapshot(bundle: dict, state: dict, mode: str = 'relief') -> list[dict]:
+    """
+    Get risk zones for WorldSnapshot, accounting for placed tokens.
+    Works in both prevention and relief modes.
+    """
+    terrain, risk_data = _load_data()
+
+    # Get base zones
+    base_zones = get_risk_zones(bundle, risk_data)
+
+    # Get placed tokens from state
+    tokens = state.get('tokens', [])
+    if isinstance(tokens, dict):
+        tokens = list(tokens.values())
+
+    # Filter to only accepted tokens
+    placed_tokens = [t for t in tokens if t.get('status') == 'accepted']
+
+    # Calculate protection
+    if placed_tokens:
+        return calculate_protected_zones(base_zones, placed_tokens, bundle)
+
+    # Add default fields if no tokens placed
+    for zone in base_zones:
+        zone['base_probability'] = zone.get('flood_probability', 0.5)
+        zone['color'] = zone.get('color_hex', '#FFCC00')
+        zone['is_protected'] = False
+
+    return base_zones
+
+
 # =============================================================================
 # VULNERABILITY & EFFECTIVENESS (research-based)
 # =============================================================================

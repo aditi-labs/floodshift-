@@ -34,7 +34,7 @@ from backend.contracts import (
     WorldSnapshot, WorldAction, ActionResult, ActionType, TokenState,
     WorldMetrics, GhostSuggestion, EdgeState, Phase, TokenType, VisionSource,
     HealthResponse, SuggestRequest, NarrateRequest, NarrateResponse,
-    BranchSaveRequest, BranchLoadRequest, WSEvent
+    BranchSaveRequest, BranchLoadRequest, WSEvent, RiskZone, RiskLevel
 )
 
 # Import real WorldService from P4, fallback to mock
@@ -123,6 +123,42 @@ def _dict_to_world_snapshot(data: dict) -> WorldSnapshot:
     else:
         phase = phase_val
 
+    # Calculate risk zones with token protection
+    risk_zones = []
+    try:
+        from backend.planning.prevention import get_risk_zones_for_snapshot
+        # Get bundle from world_service if available
+        bundle = {}
+        if world_service:
+            if hasattr(world_service, 'scenario'):
+                bundle = world_service.scenario()
+            elif hasattr(world_service, '_bundle'):
+                bundle = world_service._bundle
+
+        # Build state dict for risk calculation
+        state = {
+            'tokens': [t.model_dump() if hasattr(t, 'model_dump') else t for t in tokens],
+            'phase': phase_val
+        }
+
+        zone_data = get_risk_zones_for_snapshot(bundle, state, mode='relief')
+        for z in zone_data:
+            risk_zones.append(RiskZone(
+                zone_id=z.get('zone_id', ''),
+                node_id=z.get('node_id', ''),
+                board_uv_center=tuple(z.get('board_uv_center', (0.5, 0.5))),
+                radius_uv=z.get('radius_uv', 0.08),
+                risk_level=RiskLevel(z.get('risk_level', 'medium')),
+                flood_probability=z.get('flood_probability', 0.5),
+                base_probability=z.get('base_probability', 0.5),
+                population_exposed=z.get('population_exposed', 0),
+                elevation_m=z.get('elevation_m'),
+                color=z.get('color', '#FFCC00'),
+                is_protected=z.get('is_protected', False)
+            ))
+    except Exception as e:
+        print(f"Warning: Could not calculate risk zones: {e}")
+
     return WorldSnapshot(
         schema_version=data.get('schema_version', 2),
         world_version=data.get('world_version', 1),
@@ -138,7 +174,8 @@ def _dict_to_world_snapshot(data: dict) -> WorldSnapshot:
         metrics=metrics,
         ghost_suggestion=ghost,
         narration_event=None,
-        provenance_label=data.get('provenance_label', 'Educational scenario')
+        provenance_label=data.get('provenance_label', 'Educational scenario'),
+        risk_zones=risk_zones
     )
 
 

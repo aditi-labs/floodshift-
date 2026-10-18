@@ -226,12 +226,16 @@ class RiskLevel(str, Enum):
 class RiskZone(BaseModel):
     """Risk overlay zone for projection"""
     zone_id: str
+    node_id: str  # Which node this zone represents
     board_uv_center: tuple[float, float]
     radius_uv: float
     risk_level: RiskLevel
     flood_probability: float  # 0-1
+    base_probability: float  # Original probability before token protection
     population_exposed: int
     elevation_m: float | None = None
+    color: str = "#FFCC00"  # Hex color for rendering
+    is_protected: bool = False  # True if tokens provide protection
 
 
 class PreventionMetrics(BaseModel):
