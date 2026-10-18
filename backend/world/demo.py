@@ -32,6 +32,8 @@ def main():
     parser.add_argument('--bundle', type=Path, help='Opt into a bundle without changing shared schematic fixtures')
     args = parser.parse_args()
     service = staged_world(args.bundle)
+    # Judge asks "what should we do?": the ghost bridge appears in the snapshot.
+    assert service.request_suggestion()['accepted']
     before = service.snapshot()
     result = place(service, 'bridge', 'crossing_east')
     assert result['accepted'], result['reason']

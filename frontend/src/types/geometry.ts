@@ -1,8 +1,15 @@
 import type { UV } from "./contracts";
 
-// A3 landscape (420 x 297 mm). board_uv (0,0) = printed-map top-left on ALL screens.
+// board_uv (0,0) = printed-map top-left on ALL screens. Width is fixed at 1000 SVG
+// units; height follows the scenario's physical aspect (A3 schematic by default, square
+// for the HOT-derived map). `export let` is a live binding, so callers see updates.
 export const BOARD_WIDTH = 1000;
-export const BOARD_HEIGHT = 707.14; // 1000 * 297 / 420
+export let BOARD_HEIGHT = 707.14; // 1000 * 297 / 420
+
+/** Call once when GET /scenario arrives, before rendering that scenario. */
+export function setBoardAspect(widthOverHeight: number | undefined) {
+  if (widthOverHeight && Number.isFinite(widthOverHeight) && widthOverHeight > 0) BOARD_HEIGHT = BOARD_WIDTH / widthOverHeight;
+}
 
 export function toSvgPoint(u: number, v: number) {
   return { x: u * BOARD_WIDTH, y: v * BOARD_HEIGHT };

@@ -65,7 +65,14 @@
     "expected_world_version": 4
   },
   {
-    "action_id": "demo-5",
+    "action_id": "suggest-5",
+    "type": "suggest",
+    "source": "manual",
+    "expected_world_version": 5,
+    "goal": "needs_served"
+  },
+  {
+    "action_id": "demo-6",
     "type": "place_token",
     "token_type": "bridge",
     "token_id": "bridge",
@@ -75,6 +82,6 @@
       0.5
     ],
     "source": "manual",
-    "expected_world_version": 5
+    "expected_world_version": 6
   }
 ]

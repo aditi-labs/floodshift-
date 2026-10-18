@@ -20,12 +20,16 @@ def eligible_interventions(bundle, state, goal='needs_served'):
             preview = reduce_action(bundle, state, action)
         except RuleError:
             continue
-        after = measure(bundle, preview)['metrics']
+        measured = measure(bundle, preview)
+        after = measured['metrics']
+        # Draw the first restored service path that actually uses this crossing.
+        preview_route = next((r['edge_ids'] for r in measured['service_routes']
+                              if r['reachable'] and site['edge_id'] in r['edge_ids']), [])
         gain = sum(baseline['unmet_' + n + '_model'] - after['unmet_' + n + '_model'] for n in GOALS[goal])
         candidates.append({'token_type': 'bridge', 'site_id': site['id'],
                            'board_uv': site['board_uv'], 'rotation_deg': site.get('rotation_deg', 0),
                            'reason_code': 'improves_multi_service_access' if gain > 0 else 'no_current_need_gain',
-                           'gain_model': gain, 'resource_cost': site['resource_cost'],
+                           'gain_model': gain, 'preview_edge_ids': preview_route, 'resource_cost': site['resource_cost'],
                            'score': gain * 10 - site['resource_cost'], 'projected_metrics': after})
     return sorted(candidates, key=lambda c: (-c['score'], c['site_id']))
 

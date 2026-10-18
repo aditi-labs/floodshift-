@@ -3,6 +3,8 @@
 Inputs/outputs are JSON dictionaries; no dependency on P3's Pydantic module.
 """
 from copy import deepcopy
+from pathlib import Path
+import re
 from threading import RLock
 
 from backend.planning.ghost_bridge import best_suggestion, eligible_interventions
@@ -10,13 +12,18 @@ from backend.planning.population_routes import plan_population_routes
 from backend.simulation.reachability import measure
 from backend.simulation.routing import route_minutes
 from backend.world.rules import SOURCES, RuleError, initial_state, reduce_action, require
-from backend.world.scenarios import load_bundle, validate_bundle
+from backend.world.geometry import scenario_geometry
+from backend.world.scenarios import DEFAULT_BUNDLE, load_bundle, validate_bundle
 from backend.world.session_store import SessionStore, SessionError, SessionConflict, fingerprint
 
 
+BRANCH_NAME = re.compile(r'^[A-Za-z0-9_.:-]{1,40}$')
+
+
 class WorldService:
-    def __init__(self, bundle=None):
+    def __init__(self, bundle=None, bundle_path=None):
         self._bundle = deepcopy(bundle) if bundle is not None else load_bundle()
+        self._bundle_path = Path(bundle_path) if bundle_path else (DEFAULT_BUNDLE if bundle is None else None)
         if 'routing_policy' in self._bundle:
             validate_bundle(self._bundle)
         self._state = initial_state(self._bundle)
@@ -25,12 +32,14 @@ class WorldService:
         self._events = []
         self._history = {'snap-0': deepcopy(self._state)}
         self._branches = {'main': deepcopy(self._state)}
+        # Immutable named bookmarks for the UI's Save A / Baseline / Save B / Compare.
+        self._saved = {}
         self._lock = RLock()
         self._store = None
 
     @classmethod
     def from_bundle(cls, path):
-        return cls(load_bundle(path))
+        return cls(load_bundle(path), path)
 
     @classmethod
     def open_session(cls, session_path, bundle_path=None):
@@ -38,7 +47,7 @@ class WorldService:
 
         Corrupt/incompatible sessions raise SessionError; never silently reset.
         """
-        service = cls(load_bundle(bundle_path))
+        service = cls(load_bundle(bundle_path), bundle_path or DEFAULT_BUNDLE)
         store = SessionStore(session_path)
         payload = store.read()
         if payload is None:
@@ -74,7 +83,9 @@ class WorldService:
                    'token_inventory', 'budget_remaining_model', 'narration_event')},
                 'tokens': deepcopy(sorted(state['tokens'].values(), key=lambda t: t['id'])),
                 **measure(self._bundle, state),
-                'ghost_suggestion': best_suggestion(self._bundle, state),
+                # Shown only after someone asks (suggest action); cleared by a bridge or reset.
+                'ghost_suggestion': (best_suggestion(self._bundle, state, state['ghost_goal'])
+                                     if state.get('ghost_goal') else None),
                 'provenance_label': self._bundle['provenance_label'],
                 'data_mode': self._bundle['data_mode']}
         if 'routing_policy' in self._bundle:
@@ -93,6 +104,14 @@ class WorldService:
     def scenario(self):
         return deepcopy(self._bundle)
 
+    def scenario_geometry(self):
+        """Static board geometry for GET /scenario; road ids equal snapshot edge ids."""
+        data = None
+        if self._bundle_path is not None:
+            root = Path(self._bundle_path)
+            data = root / 'data' if (root / 'data').is_dir() else root
+        return scenario_geometry(self._bundle, data)
+
     def suggest(self, goal='needs_served'):
         with self._lock:
             return deepcopy(best_suggestion(self._bundle, self._state, goal))
@@ -110,13 +129,21 @@ class WorldService:
         with self._lock:
             if not isinstance(branches, (list, tuple)) or len(branches) < 2:
                 raise ValueError('at_least_two_branches_required')
-            if any(not isinstance(b, str) or b not in self._branches for b in branches):
+            if any(not isinstance(b, str) or (b not in self._saved and b not in self._branches) for b in branches):
                 raise ValueError('unknown_branch')
-            records = [{'id': b, 'metrics': measure(self._bundle, self._branches[b])['metrics']} for b in branches]
+            # A saved bookmark wins over a live branch head with the same name.
+            states = {b: self._saved.get(b, self._branches.get(b)) for b in branches}
+            records = [{'id': b, 'saved': b in self._saved,
+                        'placed': sorted(t['type'] for t in states[b]['tokens'].values()),
+                        'metrics': measure(self._bundle, states[b])['metrics']} for b in branches]
             base = records[0]['metrics']
             return {'branches': records, 'delta_from_first': {r['id']: {k: v - base[k]
                     for k, v in r['metrics'].items()} for r in records[1:]},
                     'metric_provenance': 'educational scenario assumptions'}
+
+    def has_branch(self, name):
+        with self._lock:
+            return name in self._saved or name in self._branches
 
     def event_log(self):
         with self._lock:
@@ -130,10 +157,11 @@ class WorldService:
     def frozen_copy(self):
         """Detached version-consistent view for narration; no persistence attached."""
         with self._lock:
-            clone = WorldService(self._bundle)
+            clone = WorldService(self._bundle, self._bundle_path)
             clone._state = deepcopy(self._state)
             clone._version = self._version
             clone._branches = deepcopy(self._branches)
+            clone._saved = deepcopy(self._saved)
             clone._history = deepcopy(self._history)
             clone._seen = set(self._seen)
             clone._events = deepcopy(self._events)
@@ -153,22 +181,39 @@ class WorldService:
                 require(isinstance(action.get('source'), str) and action['source'] in SOURCES, 'invalid_source')
                 require(isinstance(action.get('type'), str), 'unsupported_action')
                 kind = action['type']
+                saved = None
+                suggestion = None
                 if kind == 'suggest':
-                    goal = action.get('goal', 'needs_served')
+                    goal = action.get('goal') or 'needs_served'
                     try:
                         suggestion = self.suggest(goal)
                     except ValueError as error:
                         raise RuleError(str(error)) from error
-                    return {'accepted': True, 'reason': None, 'world_version': self._version,
-                            'snapshot': self.snapshot(), 'suggestion': suggestion}
-                if kind == 'compare':
+                    require(suggestion is not None, 'no_suggestion')
+                    # Displaying a ghost is a logged, versioned event so every screen agrees.
+                    next_state = deepcopy(self._state)
+                    next_state['ghost_goal'] = goal
+                    next_state['narration_event'] = {'event_type': 'bridge_suggested', 'model_only': True}
+                elif kind == 'compare':
                     try:
                         comparison = self.compare(action.get('branches'))
                     except ValueError as error:
                         raise RuleError(str(error)) from error
                     return {'accepted': True, 'reason': None, 'world_version': self._version,
                             'snapshot': self.snapshot(), 'comparison': comparison}
-                if kind == 'branch':
+                elif kind == 'save_branch':
+                    name = action.get('branch_id')
+                    require(isinstance(name, str) and bool(BRANCH_NAME.match(name)), 'invalid_branch_id')
+                    next_state = deepcopy(self._state)
+                    next_state['narration_event'] = {'event_type': 'branch_saved', 'model_only': True}
+                    saved = name
+                elif kind == 'load_branch':
+                    name = action.get('branch_id')
+                    require(isinstance(name, str) and name in self._saved, 'unknown_branch')
+                    next_state = deepcopy(self._saved[name])
+                    next_state['branch_id'] = name
+                    next_state['narration_event'] = {'event_type': 'branch_loaded', 'model_only': True}
+                elif kind == 'branch':
                     name = action.get('branch_id')
                     require(isinstance(name, str) and bool(name), 'invalid_branch_id')
                     require(name not in self._branches, 'branch_exists')
@@ -207,4 +252,26 @@ class WorldService:
             self._branches[next_state['branch_id']] = deepcopy(next_state)
             self._history['snap-' + str(self._version)] = deepcopy(next_state)
             self._events.append(deepcopy(event))
-            return {'accepted': True, 'reason': None, 'world_version': self._version, 'snapshot': snapshot}
+            if saved is not None:
+                self._saved[saved] = deepcopy(next_state)
+            result = {'accepted': True, 'reason': None, 'world_version': self._version, 'snapshot': snapshot}
+            if suggestion is not None:
+                result['suggestion'] = suggestion
+            return result
+
+    def _apply_internal(self, kind, **fields):
+        with self._lock:
+            return self.apply({'action_id': f'{kind}-{self._version}', 'type': kind, 'source': 'manual',
+                               'expected_world_version': self._version, **fields})
+
+    def request_suggestion(self, goal='needs_served'):
+        """Compute the best ghost bridge and show it in subsequent snapshots."""
+        return self._apply_internal('suggest', goal=goal)
+
+    def save_branch(self, name):
+        """Bookmark the current state under ``name`` (overwrites an earlier bookmark)."""
+        return self._apply_internal('save_branch', branch_id=name)
+
+    def load_branch(self, name):
+        """Continue from a saved bookmark; the bookmark itself stays unchanged."""
+        return self._apply_internal('load_branch', branch_id=name)

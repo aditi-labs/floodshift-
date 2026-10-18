@@ -25,7 +25,8 @@ def require(condition, reason):
 def initial_state(bundle, branch_id='main'):
     return {'phase': 'ready', 'simulation_stage': 0, 'branch_id': branch_id,
             'tokens': {}, 'token_inventory': deepcopy(bundle['token_inventory']),
-            'budget_remaining_model': bundle['budget_model'], 'narration_event': None}
+            'budget_remaining_model': bundle['budget_model'], 'narration_event': None,
+            'ghost_goal': None}
 
 
 def reduce_action(bundle, original, action):
@@ -94,6 +95,8 @@ def reduce_action(bundle, original, action):
         require(any(e.get('parent_edge_id', e['id']) == site['edge_id'] and e['blocked'] for e in measured['edges']), 'crossing_already_open')
     if token_type == 'disaster_start':
         state['phase'], state['simulation_stage'] = 'disaster_active', 1
+    if token_type == 'bridge':
+        state['ghost_goal'] = None
     state['tokens'][token_id] = {'id': token_id, 'type': token_type,
         'board_uv': list(action['board_uv']), 'site_id': site['id'],
         'vision_source': {'physical_perceptron': 'perceptron'}.get(action['source'], action['source']),

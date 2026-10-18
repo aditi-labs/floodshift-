@@ -91,7 +91,11 @@ class GeminiNarrator:
     @staticmethod
     def _fallback(service, reason):
         snapshot = service.snapshot()
-        return {'mode': 'TEXT', 'text': narrate(snapshot), 'reason': reason,
+        try:
+            suggestion = service.suggest()
+        except ValueError:
+            suggestion = None
+        return {'mode': 'TEXT', 'text': narrate(snapshot, suggestion), 'reason': reason,
                 'world_version': snapshot['world_version'], 'branch_id': snapshot['branch_id'],
                 'model_only': True, 'facts': snapshot['metrics'], 'tools_used': []}
 
@@ -123,7 +127,8 @@ class GeminiNarrator:
         summary['population_demand'] = snapshot['population_demand']
         summary['facilities'] = snapshot['facilities']
         summary['depot_node'] = frozen.scenario()['depot_node']
-        summary['ghost_suggestion'] = snapshot['ghost_suggestion']
+        # The planner's current best bridge, whether or not it is projected yet.
+        summary['ghost_suggestion'] = snapshot['ghost_suggestion'] or frozen.suggest()
         contents = [{'role': 'user', 'parts': [{'text': json.dumps({
             'question': question, 'simulator_facts': compact_result(summary)}, ensure_ascii=False)}]}]
         config = {'system_instruction': SYSTEM_INSTRUCTION, 'max_output_tokens': 2048,

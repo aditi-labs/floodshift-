@@ -1,7 +1,7 @@
 {
   "schema_version": 2,
-  "world_version": 5,
-  "snapshot_id": "snap-5",
+  "world_version": 6,
+  "snapshot_id": "snap-6",
   "scenario_id": "nepal_rasuwa_v1",
   "phase": "disaster_active",
   "simulation_stage": 1,
@@ -16,7 +16,7 @@
   },
   "budget_remaining_model": 2,
   "narration_event": {
-    "event_type": "shelter_placed",
+    "event_type": "bridge_suggested",
     "model_only": true
   },
   "tokens": [
@@ -259,10 +259,49 @@
       "need_refuge": 8,
       "id": "people_east",
       "token_id": "person",
-      "node_id": "village"
+      "node_id": "village",
+      "unmet_medical": 2,
+      "unmet_food": 8,
+      "unmet_refuge": 8
     }
   ],
   "routes": [],
+  "service_routes": [
+    {
+      "population_id": "people_east",
+      "service": "medical",
+      "facility_id": "hospital",
+      "reachable": false,
+      "edge_ids": [
+        "east_village",
+        "crossing_east_road",
+        "medical_road"
+      ]
+    },
+    {
+      "population_id": "people_east",
+      "service": "food",
+      "facility_id": "food_shelter",
+      "reachable": false,
+      "edge_ids": [
+        "east_village",
+        "crossing_east_road",
+        "depot_west",
+        "food_road"
+      ]
+    },
+    {
+      "population_id": "people_east",
+      "service": "refuge",
+      "facility_id": "shelter",
+      "reachable": false,
+      "edge_ids": [
+        "east_village",
+        "crossing_east_road",
+        "refuge_road"
+      ]
+    }
+  ],
   "metrics": {
     "blocked_roads": 2,
     "resource_spent": 3,
@@ -285,6 +324,11 @@
     "rotation_deg": 0,
     "reason_code": "improves_multi_service_access",
     "gain_model": 18,
+    "preview_edge_ids": [
+      "east_village",
+      "crossing_east_road",
+      "medical_road"
+    ],
     "resource_cost": 2,
     "score": 178,
     "projected_metrics": {

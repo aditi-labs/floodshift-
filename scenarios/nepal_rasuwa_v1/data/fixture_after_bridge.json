@@ -1,7 +1,7 @@
 {
   "schema_version": 2,
-  "world_version": 6,
-  "snapshot_id": "snap-6",
+  "world_version": 7,
+  "snapshot_id": "snap-7",
   "scenario_id": "nepal_rasuwa_v1",
   "phase": "disaster_active",
   "simulation_stage": 1,
@@ -270,7 +270,10 @@
       "need_refuge": 8,
       "id": "people_east",
       "token_id": "person",
-      "node_id": "village"
+      "node_id": "village",
+      "unmet_medical": 0,
+      "unmet_food": 0,
+      "unmet_refuge": 0
     }
   ],
   "routes": [
@@ -373,6 +376,42 @@
           0.35,
           0.75
         ]
+      ]
+    }
+  ],
+  "service_routes": [
+    {
+      "population_id": "people_east",
+      "service": "medical",
+      "facility_id": "hospital",
+      "reachable": true,
+      "edge_ids": [
+        "east_village",
+        "crossing_east_road",
+        "medical_road"
+      ]
+    },
+    {
+      "population_id": "people_east",
+      "service": "food",
+      "facility_id": "food_shelter",
+      "reachable": true,
+      "edge_ids": [
+        "east_village",
+        "crossing_east_road",
+        "depot_west",
+        "food_road"
+      ]
+    },
+    {
+      "population_id": "people_east",
+      "service": "refuge",
+      "facility_id": "shelter",
+      "reachable": true,
+      "edge_ids": [
+        "east_village",
+        "crossing_east_road",
+        "refuge_road"
       ]
     }
   ],

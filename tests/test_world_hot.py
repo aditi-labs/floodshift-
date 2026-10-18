@@ -108,10 +108,10 @@ def test_hot_route_polylines_follow_road_bends_and_reverse_correctly():
 def test_hot_fixtures_match_real_reducer():
     service = WorldService.from_bundle(BUNDLE)
     actions = json.loads((BUNDLE / 'data/demo_actions.json').read_text())
-    for action in actions[:5]:
+    for action in actions[:6]:  # five pieces, then the suggest request
         assert service.apply(action)['accepted']
     assert service.snapshot() == json.loads((BUNDLE / 'data/fixture_world.json').read_text())
-    service.apply(actions[5])
+    service.apply(actions[6])
     assert service.snapshot() == json.loads((BUNDLE / 'data/fixture_after_bridge.json').read_text())
 
 
