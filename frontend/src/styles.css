@@ -182,9 +182,9 @@ button { font: inherit; }
 
 /* Steady-state access and coverage marks */
 .coverage-halo { stroke-width: 3; opacity: 0.85; }
-.coverage-hospital { stroke: var(--c-medical); fill: rgba(59, 130, 246, 0.2); }
-.coverage-shelter { stroke: var(--c-refuge); fill: rgba(168, 85, 247, 0.2); }
-.coverage-food_shelter { stroke: var(--c-food); fill: rgba(245, 158, 11, 0.2); }
+.coverage-hospital { stroke: var(--c-medical); fill: var(--c-medical); fill-opacity: 0.2; }
+.coverage-shelter { stroke: var(--c-refuge); fill: var(--c-refuge); fill-opacity: 0.2; }
+.coverage-food_shelter { stroke: var(--c-food); fill: var(--c-food); fill-opacity: 0.2; }
 .isolated-ring { fill: none; stroke: var(--c-cut); stroke-width: 4; stroke-dasharray: 6 5; animation: dash-march 2.4s linear infinite; }
 .isolated-label { text-anchor: middle; font-weight: 900; letter-spacing: 0.12em; fill: #ff6b6b; paint-order: stroke; stroke: rgba(0, 0, 0, 0.8); stroke-width: 3; }
 .access-dots .dot-ok { stroke-width: 2; }
@@ -200,6 +200,19 @@ button { font: inherit; }
 
 /* ───────────── Projector ───────────── */
 .projector { position: fixed; inset: 0; background: #000; overflow: hidden; cursor: none; }
+/* Camera-safe palette: the board watcher treats yellow/amber changes (OpenCV hue 17–36,
+   backend/perception/bridge_profile.json) as bridge candidates, so nothing the projector
+   draws may fall in that hue window. Food stays warm (red-orange), glows go white/cyan. */
+.projector {
+  --c-food: #ff5a1f;
+  --c-start: #ff6a3d;
+  --c-warn: #ff5a1f;
+}
+.projector .rx-edge_restored .rx-edge { stroke: #ffffff; filter: drop-shadow(0 0 8px #67e8f9); }
+.projector .rx-pulse { stroke: #e0f2fe; }
+.projector .score-delta.up { fill: #67e8f9; }
+.projector .fb-rejected .fb-ring { stroke: #ff5a1f; filter: drop-shadow(0 0 6px #ff5a1f); }
+.projector .fb-rejected .fb-text { fill: #ff5a1f; }
 .projector-screen { background: #111; }
 .projector-stage { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
 .projector-wait { color: #555; font-size: 20px; }
