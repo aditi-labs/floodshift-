@@ -117,19 +117,29 @@ def count_rungs(deck: np.ndarray) -> int:
     return peaks
 
 
-def detect_bridges(frame_bgr: np.ndarray, profile: dict | None = None) -> list[BridgeDetection]:
-    """Find printed bridge pieces in a BGR frame. Pixel coordinates of the input frame."""
+def detect_bridges(frame_bgr: np.ndarray, profile: dict | None = None,
+                   region_mask: np.ndarray | None = None) -> list[BridgeDetection]:
+    """Find printed bridge pieces in a BGR frame. Pixel coordinates of the input frame.
+
+    region_mask (uint8, 255 = search here) limits the search, e.g. to the board polygon,
+    so yellowish texture around the board can neither trigger nor hide a detection.
+    """
     if cv2 is None:
         raise ImportError('opencv-contrib-python required')
     profile = profile or load_profile()
-    frame_area = frame_bgr.shape[0] * frame_bgr.shape[1]
     mask = yellow_mask(frame_bgr, profile)
+    if region_mask is not None:
+        mask = cv2.bitwise_and(mask, region_mask)
+        search_area = max(1, cv2.countNonZero(region_mask))
+    else:
+        search_area = frame_bgr.shape[0] * frame_bgr.shape[1]
     gray = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY)
-    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    # RETR_LIST: a piece enclosed by a larger yellowish blob is still its own contour.
+    contours, _ = cv2.findContours(mask, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
     found = []
     for contour in contours:
         area = int(cv2.contourArea(contour))
-        if not profile['min_area_fraction'] * frame_area <= area <= profile['max_area_fraction'] * frame_area:
+        if not profile['min_area_fraction'] * search_area <= area <= profile['max_area_fraction'] * search_area:
             continue
         rect = cv2.minAreaRect(contour)
         (cx, cy), (w, h), angle = rect
@@ -149,7 +159,7 @@ def detect_bridges(frame_bgr: np.ndarray, profile: dict | None = None) -> list[B
 
 
 def looks_like_bridge(frame_bgr: np.ndarray, center_px: tuple[float, float], radius_px: float = 80,
-                      profile: dict | None = None) -> bool:
+                      profile: dict | None = None, region_mask: np.ndarray | None = None) -> bool:
     """True when a detected bridge piece lies within radius_px of center_px."""
     return any(np.hypot(d.center[0] - center_px[0], d.center[1] - center_px[1]) <= radius_px
-               for d in detect_bridges(frame_bgr, profile))
+               for d in detect_bridges(frame_bgr, profile, region_mask))

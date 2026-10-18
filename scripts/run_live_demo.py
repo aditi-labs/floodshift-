@@ -31,6 +31,7 @@ import numpy as np
 import httpx
 
 from backend.perception.perceptron_adapter import PerceptronAdapter
+from backend.perception.board_watcher import BoardWatcher
 
 # =============================================================================
 # CONFIGURATION
@@ -52,138 +53,10 @@ CORNER_MARKERS = {
 }
 
 # Token detection settings
-STABILITY_FRAMES = 20  # Frames object must be stable before detection
-PERCEPTRON_COOLDOWN = 2.0  # Seconds between API calls
-MIN_OBJECT_AREA = 1000  # Minimum contour area to consider
-BACKGROUND_WARMUP_FRAMES = 30  # Learn the empty board for ~1 s, then freeze the model...
-SETTLED_LEARNING_RATE = 0.0002  # ...so a motionless piece stays foreground for minutes, not 12 frames
-MISSING_FRAMES_GRACE = 15  # Frames a tracked piece may be unmatched (hand occlusion) before it is dropped
-
-# =============================================================================
-# SIMPLE OBJECT TRACKER
-# =============================================================================
-
-class SimpleTracker:
-    """Track objects without markers using contour detection."""
-
-    def __init__(self):
-        self.tracked_objects = {}  # id -> {center, frames_stable, identified, token_type}
-        self.next_id = 1
-        self.bg_subtractor = cv2.createBackgroundSubtractorMOG2(
-            history=500, varThreshold=50, detectShadows=False
-        )
-        self.frames_seen = 0
-
-    def update(self, frame):
-        """Update tracker with new frame, return list of stable unidentified objects."""
-        # Apply background subtraction. MOG2's automatic rate absorbs a static piece within
-        # ~12 frames during the first 500 frames, so pieces placed early were never stable.
-        self.frames_seen += 1
-        rate = -1 if self.frames_seen <= BACKGROUND_WARMUP_FRAMES else SETTLED_LEARNING_RATE
-        fg_mask = self.bg_subtractor.apply(frame, learningRate=rate)
-
-        # Clean up mask
-        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
-        fg_mask = cv2.morphologyEx(fg_mask, cv2.MORPH_OPEN, kernel)
-        fg_mask = cv2.morphologyEx(fg_mask, cv2.MORPH_CLOSE, kernel)
-
-        # Find contours
-        contours, _ = cv2.findContours(fg_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
-        # Get centers of significant contours
-        current_centers = []
-        for contour in contours:
-            area = cv2.contourArea(contour)
-            if area > MIN_OBJECT_AREA:
-                M = cv2.moments(contour)
-                if M["m00"] > 0:
-                    cx = int(M["m10"] / M["m00"])
-                    cy = int(M["m01"] / M["m00"])
-                    current_centers.append((cx, cy, area))
-
-        # Match to existing tracked objects
-        matched_ids = set()
-        for cx, cy, area in current_centers:
-            best_id = None
-            best_dist = 50  # Max distance to match
-
-            for obj_id, obj in self.tracked_objects.items():
-                if obj_id in matched_ids:
-                    continue
-                dist = np.sqrt((cx - obj['center'][0])**2 + (cy - obj['center'][1])**2)
-                if dist < best_dist:
-                    best_dist = dist
-                    best_id = obj_id
-
-            if best_id:
-                # Update existing object
-                self.tracked_objects[best_id]['center'] = (cx, cy)
-                self.tracked_objects[best_id]['frames_stable'] += 1
-                self.tracked_objects[best_id]['missing'] = 0
-                matched_ids.add(best_id)
-            else:
-                # New object
-                self.tracked_objects[self.next_id] = {
-                    'center': (cx, cy),
-                    'frames_stable': 1,
-                    'identified': False,
-                    'token_type': None,
-                    'sent_to_backend': False,
-                    'missing': 0,
-                }
-                self.next_id += 1
-
-        # Drop objects only after a run of unmatched frames (a hand passing over a piece
-        # must not reset identification or trigger a second deployment).
-        for oid in [oid for oid in self.tracked_objects if oid not in matched_ids]:
-            self.tracked_objects[oid]['missing'] += 1
-            if self.tracked_objects[oid]['missing'] > MISSING_FRAMES_GRACE:
-                del self.tracked_objects[oid]
-
-        # Return stable unidentified objects
-        return [
-            (oid, obj) for oid, obj in self.tracked_objects.items()
-            if obj['frames_stable'] >= STABILITY_FRAMES and not obj['identified']
-        ]
-
-    def mark_identified(self, obj_id, token_type):
-        """Mark object as identified."""
-        if obj_id in self.tracked_objects:
-            self.tracked_objects[obj_id]['identified'] = True
-            self.tracked_objects[obj_id]['token_type'] = token_type
-
-    def mark_sent(self, obj_id):
-        """Mark object as sent to backend."""
-        if obj_id in self.tracked_objects:
-            self.tracked_objects[obj_id]['sent_to_backend'] = True
-
-    def get_unsent_objects(self):
-        """Get identified objects not yet sent to backend."""
-        return [
-            (oid, obj) for oid, obj in self.tracked_objects.items()
-            if obj['identified'] and not obj['sent_to_backend']
-        ]
-
-    def draw_debug(self, frame):
-        """Draw debug visualization on frame."""
-        for obj_id, obj in self.tracked_objects.items():
-            cx, cy = obj['center']
-
-            if obj['identified']:
-                color = (0, 255, 0)  # Green for identified
-                label = f"{obj['token_type']} [{obj.get('class_source', '?')}]"
-                if obj['sent_to_backend']:
-                    label += " [SENT]"
-            else:
-                color = (0, 255, 255)  # Yellow for tracking
-                label = f"#{obj_id} ({obj['frames_stable']})"
-
-            cv2.circle(frame, (cx, cy), 30, color, 3)
-            cv2.putText(frame, label, (cx - 40, cy - 40),
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
-
-        return frame
-
+STABILITY_FRAMES = 20  # Frames a piece must sit still before it is classified/sent
+PERCEPTRON_COOLDOWN = 2.0  # Seconds between Perceptron calls (one call covers all pending pieces)
+REFERENCE_FRAMES = 15  # frames of the empty board averaged into the change reference
+STATUS_SECONDS = 4  # how long a rejection reason stays on the HUD
 
 # =============================================================================
 # CALIBRATION
@@ -282,33 +155,11 @@ def pixel_to_board(homography, px_x, px_y, frame_width, frame_height):
 CLASSIFIER = PerceptronAdapter(mock_mode=False)  # Perceptron when configured, local bridge rule otherwise
 
 
-def classify_frame(frame):
-    """Identify pieces in the frame. Returns dicts with token_type, center, mention, class_source."""
-    try:
-        boxes = CLASSIFIER.classify_frame(frame)
-    except Exception as e:
-        print(f"Classifier error: {e}")
-        return []
-    detections = []
-    for box in boxes:
-        if not box.token_type:
-            continue
-        detections.append({
-            'token_type': box.token_type,
-            'center': box.center,
-            'mention': box.mention,
-            'class_source': box.source,
-            'rotation_deg': box.rotation_deg or 0.0,
-            'verified_by_local_cv': box.verified_by_local_cv,
-        })
-    return detections
-
-
 # =============================================================================
 # BACKEND API
 # =============================================================================
 
-async def send_observation_to_backend(obj_id, obj, board_uv, frame_count):
+async def send_observation_to_backend(track, board_uv, frame_count):
     """Send a confirmed ObjectObservation; the gateway resolves the pad and world version."""
     try:
         async with httpx.AsyncClient() as client:
@@ -316,14 +167,14 @@ async def send_observation_to_backend(obj_id, obj, board_uv, frame_count):
                 f"{BACKEND_URL}/perception/observe",
                 json={
                     "event_type": "object_observed",
-                    "event_id": f"live-{obj_id}-{int(time.time()*1000)}",
+                    "event_id": f"live-{track.track_id}-{int(time.time()*1000)}",
                     "frame_id": frame_count,
-                    "token_id": f"tracked-{obj_id}",
-                    "object_type": obj['token_type'],
-                    "class_source": obj.get('class_source', 'perceptron'),
+                    "token_id": f"tracked-{track.track_id}",
+                    "object_type": track.token_type,
+                    "class_source": track.class_source or "perceptron",
                     "board_uv": list(board_uv),
-                    "rotation_deg": obj.get('rotation_deg', 0.0),
-                    "stable_ms": int(obj['frames_stable'] * 1000 / 30),
+                    "rotation_deg": track.rotation_deg,
+                    "stable_ms": int(track.stable_frames * 1000 / 30),
                     "vision_status": "confirmed",
                     "frame_provenance": f"live:camera{CAMERA_INDEX}:frame-{frame_count}",
                     "latency_ms": CLASSIFIER.last_latency_ms,
@@ -418,99 +269,99 @@ async def main():
         "mode": "live"
     })
 
-    # Initialize tracker
-    tracker = SimpleTracker()
-    last_perceptron_call = 0
+    watcher = BoardWatcher(CLASSIFIER, stability_frames=STABILITY_FRAMES, cooldown_s=PERCEPTRON_COOLDOWN)
+    ret, frame = cap.read()
+    watcher.set_board(homography, frame.shape if ret else (CAMERA_HEIGHT, CAMERA_WIDTH))
+
+    def capture_reference():
+        """Average the EMPTY board into the change reference, after a visible countdown."""
+        print("Clear the board (no hands, no pieces). Capturing the empty-board reference...")
+        deadline = time.time() + 3
+        while time.time() < deadline:
+            ok, f = cap.read()
+            if ok:
+                cv2.putText(f, f"CLEAR THE BOARD - reference in {deadline - time.time():.0f}s", (20, 60),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 200, 255), 2)
+                cv2.imshow("FLOODSHIFT Camera", watcher.draw(f))
+                cv2.waitKey(1)
+        frames = []
+        while len(frames) < REFERENCE_FRAMES:
+            ok, f = cap.read()
+            if ok:
+                frames.append(f)
+        watcher.capture_reference(frames)
+        watcher.tracks.clear()
+        print("Reference captured. Pieces placed inside the board from now on are candidates.")
+
+    capture_reference()
     world_version = await get_world_version()
     frame_count = 0
+    hud_message, hud_until = "", 0.0
 
     print("\n" + "="*50)
     print("LIVE DETECTION RUNNING")
     print("="*50)
-    print("Keep hands and pieces off the board for the first second (background warm-up).")
-    print("Then place tokens on the map - they will be detected!")
-    print("Press Q to quit")
+    print("Place pieces inside the board - only the board area is watched.")
+    print("Keys: Q quit | R re-capture empty-board reference | C re-calibrate")
+    if homography is None:
+        print("WARNING: not calibrated - placements cannot be matched to pads until the 4 ArUco corners are found.")
     print("="*50 + "\n")
 
     while True:
         ret, frame = cap.read()
         if not ret:
             continue
-
         frame_count += 1
 
-        # Update tracker
-        stable_objects = tracker.update(frame)
-
-        # Check if we should call Perceptron
-        now = time.time()
-        if stable_objects and (now - last_perceptron_call) > PERCEPTRON_COOLDOWN:
-            print(f"Calling Perceptron for {len(stable_objects)} object(s)...")
-            last_perceptron_call = now
-
-            detections = classify_frame(frame)
-            print(f"Classifier found: {[(d['token_type'], d['class_source']) for d in detections]}")
-
-            # Match detections to tracked objects
-            for detection in detections:
-                det_center = detection['center']
-
-                # Find closest tracked object
-                for obj_id, obj in stable_objects:
-                    obj_center = obj['center']
-                    dist = np.sqrt((det_center[0] - obj_center[0])**2 +
-                                   (det_center[1] - obj_center[1])**2)
-
-                    if dist < 100:  # Within 100 pixels
-                        tracker.mark_identified(obj_id, detection['token_type'])
-                        obj['class_source'] = detection['class_source']
-                        obj['rotation_deg'] = detection['rotation_deg']
-                        print(f"Object #{obj_id} identified as: {detection['token_type']} ({detection['class_source']})")
-                        break
-
-        # Send identified objects to backend
-        unsent = tracker.get_unsent_objects()
-        for obj_id, obj in unsent:
-            center = obj['center']
-            board_uv = pixel_to_board(homography, center[0], center[1],
-                                      CAMERA_WIDTH, CAMERA_HEIGHT)
-
-            if homography is None:
-                print(f"  {obj['token_type']} seen at frame-normalised {board_uv}; board not calibrated, pad match will fail")
-            print(f"Sending {obj['token_type']} ({obj.get('class_source')}) at {board_uv} to backend...")
-            result = await send_observation_to_backend(obj_id, obj, board_uv, frame_count)
-
+        ready = watcher.observe(frame, frame_count)
+        for track in ready:
+            board_uv = watcher.board_uv(track.center)
+            if board_uv is None:
+                watcher.mark_sent(track.track_id, "not calibrated: no board coordinates")
+                hud_message, hud_until = "NOT CALIBRATED - press C with all 4 corners visible", time.time() + STATUS_SECONDS
+                continue
+            print(f"Sending {track.token_type} ({track.class_source}) at uv=({board_uv[0]:.3f}, {board_uv[1]:.3f})...")
+            result = await send_observation_to_backend(track, board_uv, frame_count)
             if result.get('accepted'):
-                print(f"  -> ACCEPTED at {result.get('site_id')}! New world version: {result.get('world_version')}")
                 world_version = result.get('world_version', world_version)
-                tracker.mark_sent(obj_id)
+                watcher.mark_sent(track.track_id, f"accepted @ {result.get('site_id')}")
+                hud_message, hud_until = f"{track.token_type.upper()} ACCEPTED at {result.get('site_id')}", time.time() + STATUS_SECONDS
+                print(f"  -> ACCEPTED at {result.get('site_id')}, world v{world_version}")
             else:
-                print(f"  -> REJECTED: {result.get('rejection_reason', result.get('error'))}")
-                tracker.mark_sent(obj_id)  # Don't retry
+                reason = result.get('rejection_reason') or result.get('error') or 'rejected'
+                watcher.mark_sent(track.track_id, f"rejected: {reason}")  # do not retry the same placement
+                hud_message, hud_until = f"{track.token_type.upper()} REJECTED: {reason}", time.time() + STATUS_SECONDS
+                print(f"  -> REJECTED: {reason}")
 
-        # Update perception status periodically
-        if frame_count % 30 == 0:  # Every second at 30fps
+        if frame_count % 30 == 0:
             await update_perception_status({
-                "objects_tracked": len(tracker.tracked_objects),
-                "last_detection": time.strftime("%H:%M:%S")
+                "objects_tracked": len(watcher.tracks),
+                "last_detection": time.strftime("%H:%M:%S"),
+                "changed_board_fraction": round(watcher.changed_fraction, 3),
             })
+            if watcher.changed_fraction > 0.4:
+                print("Most of the board differs from the reference (lighting changed?). Press R to re-capture.")
 
-        # Draw debug visualization
-        debug_frame = tracker.draw_debug(frame.copy())
-
-        # Add status text
-        cv2.putText(debug_frame, f"World v{world_version} | Objects: {len(tracker.tracked_objects)}",
-                   (20, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-        cv2.putText(debug_frame, "Press Q to quit",
-                   (20, CAMERA_HEIGHT - 20), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200, 200, 200), 1)
-
+        status = f"World v{world_version} | tracks {len(watcher.tracks)} | {'calibrated' if watcher.calibrated else 'NOT CALIBRATED'}"
+        debug_frame = watcher.draw(frame, status)
+        if time.time() < hud_until:
+            cv2.putText(debug_frame, hud_message, (20, 65), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 200, 255), 2)
+        cv2.putText(debug_frame, "Q quit | R reference | C calibrate",
+                    (20, frame.shape[0] - 20), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200, 200, 200), 1)
         cv2.imshow("FLOODSHIFT Camera", debug_frame)
 
-        if cv2.waitKey(1) & 0xFF == ord('q'):
+        key = cv2.waitKey(1) & 0xFF
+        if key == ord('q'):
             break
+        if key == ord('r'):
+            capture_reference()
+        if key == ord('c'):
+            homography = calibrate_camera(cap)
+            watcher.set_board(homography, frame.shape)
+            capture_reference()
+            await update_perception_status({"calibration": "calibrated" if homography is not None else "uncalibrated"})
 
-        # Small delay to prevent CPU overload
-        await asyncio.sleep(0.01)
+        await asyncio.sleep(0.005)
 
     cap.release()
     cv2.destroyAllWindows()

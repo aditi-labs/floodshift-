@@ -151,28 +151,109 @@ def test_observe_endpoint_runs_the_whole_camera_path(api):
     assert not pending['applied'] and pending['rejection_reason'] == 'vision_pending'
 
 
-def test_live_runner_tracker_keeps_a_motionless_piece_until_it_is_stable(monkeypatch):
-    """Regression: MOG2's automatic rate dropped a still piece after ~12 frames early in a run."""
-    import sys
-    monkeypatch.setattr(sys, 'argv', ['x'])
-    import scripts.run_live_demo as live
-    frame = camera_frame()
-    empty = frame.copy()
-    empty[300:440, 600:690] = frame[50:190, 50:140]
-    tracker = live.SimpleTracker()
-    for _ in range(40):
-        tracker.update(empty)
-    stable = []
-    for _ in range(live.STABILITY_FRAMES + 5):
-        stable = tracker.update(frame)
-    assert len(stable) == 1
-    (oid, obj), = stable
-    assert abs(obj['center'][0] - 644) < 15 and abs(obj['center'][1] - 373) < 15
-    for _ in range(live.MISSING_FRAMES_GRACE):
-        tracker.update(empty)  # hand covers the piece briefly
-    assert oid in tracker.tracked_objects
-    for _ in range(live.MISSING_FRAMES_GRACE + 1):
-        tracker.update(empty)  # piece really removed
-    assert oid not in tracker.tracked_objects
-    detection = live.classify_frame(frame)[0]
-    assert detection['token_type'] == 'bridge' and detection['class_source'] == 'local_cv'
+class FakeClock:
+    def __init__(self):
+        self.t = 0.0
+
+    def __call__(self):
+        return self.t
+
+
+def synthetic_board(seed=0):
+    """A 1280x720 'camera' frame: tilted paper board on noisy carpet, nothing on it."""
+    rng = np.random.default_rng(seed)
+    carpet = rng.integers(40, 120, (720, 1280, 3), dtype=np.uint8)
+    board = cv2.imread(str(FRAMES / 'bridge_camera_1280x720.jpg'))
+    board[300:440, 600:690] = board[50:190, 50:140]  # remove the bridge: empty board texture
+    quad = np.array([[300, 120], [1000, 140], [980, 620], [280, 600]], dtype=np.float32)
+    src = np.array([[0, 0], [1280, 0], [1280, 720], [0, 720]], dtype=np.float32)
+    warp = cv2.getPerspectiveTransform(src, quad)
+    frame = cv2.warpPerspective(board, warp, (1280, 720), dst=carpet.copy(), borderMode=cv2.BORDER_TRANSPARENT)
+    homography = cv2.getPerspectiveTransform(quad, np.array([[0, 0], [1, 0], [1, 1], [0, 1]], dtype=np.float32))
+    return frame, homography, quad
+
+
+def carpet_noise(frame, quad, rng):
+    """Carpet pixels outside the board change every frame (camera noise, shadows)."""
+    out = frame.copy()
+    mask = np.zeros((720, 1280), np.uint8)
+    cv2.fillConvexPoly(mask, quad.astype(np.int32), 255)
+    noise = rng.integers(40, 120, (720, 1280, 3), dtype=np.uint8)
+    out[mask == 0] = noise[mask == 0]
+    return out
+
+
+def paste_bridge(frame, x, y):
+    piece = cv2.imread(str(FRAMES / 'bridge_camera_1280x720.jpg'))[300:440, 600:690]
+    out = frame.copy()
+    out[y:y + 140, x:x + 90] = piece
+    return out
+
+
+def test_board_watcher_ignores_everything_outside_the_board_and_sends_the_bridge_once(monkeypatch):
+    from backend.perception.board_watcher import BoardWatcher
+    monkeypatch.delenv('PERCEPTRON_API_KEY', raising=False)
+    rng = np.random.default_rng(1)
+    empty, homography, quad = synthetic_board()
+    watcher = BoardWatcher(PerceptronAdapter(mock_mode=False), stability_frames=20, clock=FakeClock())
+    watcher.set_board(homography, empty.shape)
+    watcher.capture_reference([carpet_noise(empty, quad, rng) for _ in range(15)])
+    for i in range(40):  # nothing placed; carpet keeps changing; a bridge lies OUTSIDE the board
+        assert watcher.observe(paste_bridge(carpet_noise(empty, quad, rng), 40, 500), i) == []
+    assert watcher.tracks == {}
+    ready = []
+    for i in range(40, 70):  # bridge placed inside the board, with carpet noise and +15% exposure
+        frame = cv2.convertScaleAbs(paste_bridge(carpet_noise(empty, quad, rng), 600, 330), alpha=1.15)
+        ready = watcher.observe(frame, i)
+    assert len(watcher.tracks) == 1 and len(ready) == 1
+    track = ready[0]
+    assert track.token_type == 'bridge' and track.class_source == 'local_cv' and watcher.inside(track.center)
+    uv = watcher.board_uv(track.center)
+    assert 0.3 < uv[0] < 0.7 and 0.2 < uv[1] < 0.7
+    watcher.mark_sent(track.track_id, 'accepted')
+    for i in range(70, 100):
+        assert watcher.observe(paste_bridge(carpet_noise(empty, quad, rng), 600, 330), i) == []
+    # A hand (large blob) over the board is never a candidate.
+    hand = paste_bridge(carpet_noise(empty, quad, rng), 600, 330)
+    cv2.rectangle(hand, (350, 200), (650, 560), (90, 110, 150), -1)
+    for i in range(100, 130):
+        watcher.observe(hand, i)
+    assert [t.token_type for t in watcher.tracks.values() if not t.sent] == []
+    assert watcher.classifier_calls == 0  # local rule; Perceptron never called
+
+
+def test_board_watcher_queries_perceptron_once_per_piece_and_never_for_noise():
+    from backend.perception.board_watcher import BoardWatcher
+    from backend.perception.perceptron_adapter import SemanticBox
+
+    class FakePerceptron:
+        available = True
+        last_latency_ms = 120
+
+        def __init__(self):
+            self.calls = 0
+
+        def classify_frame(self, frame):
+            self.calls += 1
+            return [SemanticBox(mention='miniature hospital with cross', token_type='hospital',
+                                x1=760, y1=380, x2=840, y2=460, source='perceptron')]
+
+    rng = np.random.default_rng(2)
+    empty, homography, quad = synthetic_board()
+    clock = FakeClock()
+    fake = FakePerceptron()
+    watcher = BoardWatcher(fake, stability_frames=10, clock=clock)
+    watcher.set_board(homography, empty.shape)
+    watcher.capture_reference([carpet_noise(empty, quad, rng) for _ in range(15)])
+    placed = carpet_noise(empty, quad, rng)
+    cv2.rectangle(placed, (760, 380), (840, 460), (200, 60, 60), -1)  # an unknown piece
+    ready = []
+    for i in range(30):
+        clock.t += 0.05
+        ready = watcher.observe(carpet_noise(placed, quad, rng), i)
+    assert fake.calls == 1
+    assert len(ready) == 1 and ready[0].token_type == 'hospital' and ready[0].class_source == 'perceptron'
+    for i in range(30, 60):  # still there, already classified: no further calls
+        clock.t += 0.05
+        watcher.observe(carpet_noise(placed, quad, rng), i)
+    assert fake.calls == 1

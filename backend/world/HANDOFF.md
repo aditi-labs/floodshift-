@@ -85,6 +85,10 @@ serializes commits with a lock, but gateway broadcast ordering is P3's responsib
   `vision.status`, builds the `WorldAction` with the current version under the lock, and
   broadcasts the snapshot. `class_source` maps to action source: `perceptron` →
   `physical_perceptron`, `local_cv` → `physical_local_cv` (token `vision_source` keeps it).
+- `scripts/run_live_demo.py` watches only the board (`backend/perception/board_watcher.py`):
+  after ArUco calibration it captures a reference of the empty board; candidates are
+  bridge-rule hits inside the board quad plus area-bounded change against the reference.
+  Each piece is classified once. Press R after a lighting change, C to recalibrate.
 - Printed-bridge recognition: `scripts/run_live_demo.py` uses
   `PerceptronAdapter.classify_frame`, which calls Perceptron when `PERCEPTRON_API_KEY` and
   the `perceptron` SDK exist, cross-checks bridge boxes with
