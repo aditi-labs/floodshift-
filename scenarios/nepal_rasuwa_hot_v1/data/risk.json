@@ -1,0 +1,37 @@
+{
+  "risk_model_version": 2,
+  "scenario_id": "nepal_rasuwa_hot_v1",
+  "method": "educational_exposure_index",
+  "provenance": "Measured open data (see terrain.json data_sources); token effects are authored game assumptions.",
+  "token_prevention_effects": {
+    "hospital": {
+      "effect": "pre_position_medical",
+      "reduces_casualties_pct": 0.3,
+      "coverage_radius_uv": 0.15,
+      "description": "Pre-positioned medical supplies reduce response time"
+    },
+    "shelter": {
+      "effect": "designate_evacuation_point",
+      "capacity_people": 50,
+      "coverage_radius_uv": 0.2,
+      "description": "Designated shelter for evacuees"
+    },
+    "food_shelter": {
+      "effect": "stock_emergency_supplies",
+      "days_of_supplies": 7,
+      "coverage_radius_uv": 0.15,
+      "description": "Emergency food and water stockpile"
+    },
+    "bridge": {
+      "effect": "reinforce_crossing",
+      "survival_bonus": 0.8,
+      "description": "Reinforced bridge maintains evacuation route"
+    },
+    "person": {
+      "effect": "mark_population_center",
+      "evacuation_priority_boost": true,
+      "description": "Marks community requiring evacuation plan"
+    }
+  },
+  "token_effects_origin": "scenario_synthetic"
+}

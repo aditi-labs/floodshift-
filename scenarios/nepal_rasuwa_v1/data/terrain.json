@@ -2,31 +2,47 @@
   "terrain_version": 1,
   "region": "Rasuwa District, Nepal",
   "data_sources": [
-    "NASA SRTM 30m elevation model",
-    "OpenStreetMap waterways",
-    "Nepal Central Bureau of Statistics 2021 Census",
-    "UNOSAT Flood Assessment August 2026"
+    "Illustrative values authored for the schematic fixture; not measured. The schematic nodes (depot, village, ...) are not real places. Measured inputs for the real map: scenarios/nepal_rasuwa_hot_v1/data/terrain.json"
   ],
   "coordinate_system": "WGS84",
   "board_bounds": {
     "min_lat": 28.05,
     "max_lat": 28.15,
     "min_lon": 85.25,
-    "max_lon": 85.40
+    "max_lon": 85.4
   },
-
   "elevation_model": {
-    "method": "SRTM_30m_interpolated",
+    "method": "illustrative",
     "base_elevation_m": 800,
     "max_elevation_m": 2200,
     "notes": "Valley floor along Trisuli River corridor"
   },
-
   "rivers": [
     {
       "id": "trisuli_main",
       "name": "Trisuli River",
-      "board_uv_path": [[0.1, 0.45], [0.3, 0.48], [0.5, 0.52], [0.7, 0.48], [0.9, 0.45]],
+      "board_uv_path": [
+        [
+          0.1,
+          0.45
+        ],
+        [
+          0.3,
+          0.48
+        ],
+        [
+          0.5,
+          0.52
+        ],
+        [
+          0.7,
+          0.48
+        ],
+        [
+          0.9,
+          0.45
+        ]
+      ],
       "width_m": 80,
       "flood_stage_m": 4.5,
       "historical_max_m": 8.2
@@ -34,13 +50,25 @@
     {
       "id": "tributary_north",
       "name": "Northern Tributary",
-      "board_uv_path": [[0.5, 0.1], [0.52, 0.25], [0.5, 0.4]],
+      "board_uv_path": [
+        [
+          0.5,
+          0.1
+        ],
+        [
+          0.52,
+          0.25
+        ],
+        [
+          0.5,
+          0.4
+        ]
+      ],
       "width_m": 25,
       "flood_stage_m": 2.0,
       "historical_max_m": 4.5
     }
   ],
-
   "node_terrain": {
     "depot": {
       "elevation_m": 1180,
@@ -99,23 +127,53 @@
       "flood_history_events": 1
     }
   },
-
   "population_data": {
-    "source": "Nepal CBS 2021 + UNOSAT assessment",
+    "source": "Illustrative counts for the schematic fixture (not census data)",
     "nodes": {
-      "depot": {"households": 5, "population": 22, "vulnerable_pct": 0.1},
-      "west": {"households": 45, "population": 198, "vulnerable_pct": 0.25},
-      "east": {"households": 62, "population": 271, "vulnerable_pct": 0.35},
-      "village": {"households": 89, "population": 412, "vulnerable_pct": 0.42},
-      "medical": {"households": 8, "population": 35, "vulnerable_pct": 0.08},
-      "food": {"households": 18, "population": 76, "vulnerable_pct": 0.15},
-      "refuge": {"households": 3, "population": 12, "vulnerable_pct": 0.05},
-      "north": {"households": 38, "population": 165, "vulnerable_pct": 0.20}
+      "depot": {
+        "households": 5,
+        "population": 22,
+        "vulnerable_pct": 0.1
+      },
+      "west": {
+        "households": 45,
+        "population": 198,
+        "vulnerable_pct": 0.25
+      },
+      "east": {
+        "households": 62,
+        "population": 271,
+        "vulnerable_pct": 0.35
+      },
+      "village": {
+        "households": 89,
+        "population": 412,
+        "vulnerable_pct": 0.42
+      },
+      "medical": {
+        "households": 8,
+        "population": 35,
+        "vulnerable_pct": 0.08
+      },
+      "food": {
+        "households": 18,
+        "population": 76,
+        "vulnerable_pct": 0.15
+      },
+      "refuge": {
+        "households": 3,
+        "population": 12,
+        "vulnerable_pct": 0.05
+      },
+      "north": {
+        "households": 38,
+        "population": 165,
+        "vulnerable_pct": 0.2
+      }
     },
     "total_population": 1191,
     "total_households": 268
   },
-
   "infrastructure_vulnerability": {
     "crossing_east_road": {
       "structure_type": "suspension_bridge",
@@ -142,35 +200,49 @@
       "vulnerability_score": 0.62
     }
   },
-
   "flood_scenarios": {
     "annual_10yr": {
       "name": "10-Year Flood",
-      "probability": 0.10,
+      "probability": 0.1,
       "river_rise_m": 3.5,
-      "affected_edges": ["food_road"],
+      "affected_edges": [
+        "food_road"
+      ],
       "warning_time_hours": 12
     },
     "annual_25yr": {
       "name": "25-Year Flood",
       "probability": 0.04,
       "river_rise_m": 5.5,
-      "affected_edges": ["crossing_east_road", "food_road"],
+      "affected_edges": [
+        "crossing_east_road",
+        "food_road"
+      ],
       "warning_time_hours": 8
     },
     "annual_50yr": {
       "name": "50-Year Flood",
       "probability": 0.02,
       "river_rise_m": 7.0,
-      "affected_edges": ["crossing_east_road", "crossing_north_road", "food_road"],
+      "affected_edges": [
+        "crossing_east_road",
+        "crossing_north_road",
+        "food_road"
+      ],
       "warning_time_hours": 6
     },
     "annual_100yr": {
-      "name": "100-Year Flood (like Aug 2026)",
+      "name": "100-Year Flood",
       "probability": 0.01,
       "river_rise_m": 8.5,
-      "affected_edges": ["crossing_east_road", "crossing_north_road", "food_road", "east_village"],
+      "affected_edges": [
+        "crossing_east_road",
+        "crossing_north_road",
+        "food_road",
+        "east_village"
+      ],
       "warning_time_hours": 4
     }
-  }
+  },
+  "data_mode": "ILLUSTRATIVE"
 }

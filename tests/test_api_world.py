@@ -50,7 +50,9 @@ def test_full_demo_through_the_gateway_keeps_every_computed_field(api):
     assert world['population_demand'][0]['unmet_food'] == 8
     assert world['service_routes'] and not any(r['reachable'] for r in world['service_routes'])
     assert world['ghost_suggestion'] is None and world['narration_event']['event_type'] == 'shelter_placed'
-    assert world['risk_zones'] == []  # prevention circles belong to the schematic frame only
+    # Measured prevention zones (WorldPop/Copernicus) sit on this map's own nodes.
+    node_ids = {n['id'] for n in main.world_service.scenario()['roads']['nodes']}
+    assert world['risk_zones'] and {z['node_id'] for z in world['risk_zones']} <= node_ids
 
     assert api.post('/plan/suggest', json={'goal_id': 'people_east'}).status_code == 400
     suggestion = api.post('/plan/suggest', json={'goal_id': 'needs_served'}).json()
@@ -114,6 +116,23 @@ def test_websocket_broadcasts_suggestion_and_reset(api):
         assert snapshot['phase'] == 'ready' and snapshot['tokens'] == []
 
 
-def test_prevention_endpoints_refuse_a_map_their_data_does_not_describe(api):
+def test_prevention_uses_measured_data_for_the_real_map(api):
+    risk = api.get('/prevention/risk-map').json()
+    assert risk['available'] and risk['provenance']['data_mode'] == 'MEASURED_OPEN_DATA'
+    assert {source['id'] for source in risk['provenance']['data_sources']} >= {'copernicus_glo30', 'worldpop_2020_constrained'}
+    assert set(risk['scenarios']) == {'rp10', 'rp100'}
+    sites = {s['id'] for s in main.world_service.scenario()['sites']}
+    suggestion = api.get('/prevention/suggestions').json()['suggestion']
+    assert suggestion['site_id'] in sites
+    comparison = api.post('/prevention/compare').json()
+    assert comparison['ai_analysis']['mode'] == 'TEXT' and comparison['ai_analysis']['model_only']
+
+
+def test_prevention_refuses_a_bundle_without_matching_terrain(api, monkeypatch, tmp_path):
+    from backend.planning import prevention
+    bundle = main.world_service.scenario()
+    bundle['scenario_id'] = 'no_such_bundle'
+    monkeypatch.setattr(main.world_service, 'scenario', lambda: bundle)
+    assert prevention.supports_bundle(bundle) is False
     assert api.get('/prevention/risk-map').json()['available'] is False
     assert api.get('/prevention/suggestions').status_code == 409

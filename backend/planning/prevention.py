@@ -1,11 +1,14 @@
 """
 Disaster Prevention Planning Engine - V2
-Uses REAL terrain data + research-based formulas + Gemini AI.
 
-Math based on:
-- FEMA flood risk assessment methodology
-- WHO emergency evacuation guidelines
-- Nepal DRR casualty models
+Per-bundle data in scenarios/<id>/data/{terrain,risk}.json:
+- nepal_rasuwa_hot_v1 / _reasoning_v1: measured open data (Copernicus GLO-30 DEM,
+  WorldPop 2020, Copernicus GloFAS RP10/RP100, OSM waterways), built by
+  scripts/geodata/build_risk_data.py and scored with an educational exposure index.
+- nepal_rasuwa_v1: illustrative values for the schematic fixture (not measured).
+
+Weights, evacuation times, mortality and casualty figures below are authored teaching
+assumptions, not FEMA/WHO/Nepal DRR methods or calibrated predictions.
 
 Integrates with P4's WorldService for consistent graph analysis.
 """
@@ -19,27 +22,24 @@ if TYPE_CHECKING:
     from backend.ai.gemini_adapter import GeminiAdapter
 
 # Lazy imports to avoid circular dependencies
-_terrain_data: dict | None = None
-_risk_data: dict | None = None
+_REPO = Path(__file__).resolve().parents[2]
+_DEFAULT_SCENARIO = 'nepal_rasuwa_v1'
+_cache: dict[str, tuple[dict, dict]] = {}
 
 
-def _load_data(bundle_path: Path | None = None) -> tuple[dict, dict]:
-    """Load terrain and risk data."""
-    global _terrain_data, _risk_data
-
-    if _terrain_data is not None and _risk_data is not None:
-        return _terrain_data, _risk_data
-
-    if bundle_path is None:
-        bundle_path = Path(__file__).resolve().parents[2] / 'scenarios' / 'nepal_rasuwa_v1'
-
-    terrain_file = bundle_path / 'data' / 'terrain.json'
-    risk_file = bundle_path / 'data' / 'risk.json'
-
-    _terrain_data = json.loads(terrain_file.read_text()) if terrain_file.exists() else {}
-    _risk_data = json.loads(risk_file.read_text()) if risk_file.exists() else {}
-
-    return _terrain_data, _risk_data
+def _load_data(bundle: dict | Path | None = None) -> tuple[dict, dict]:
+    """Terrain and risk data for the given bundle (dict), bundle directory, or the schematic default."""
+    if isinstance(bundle, dict):
+        root = _REPO / 'scenarios' / bundle.get('scenario_id', _DEFAULT_SCENARIO)
+    elif bundle is not None:
+        root = Path(bundle)
+    else:
+        root = _REPO / 'scenarios' / _DEFAULT_SCENARIO
+    key = str(root)
+    if key not in _cache:
+        files = [root / 'data' / name for name in ('terrain.json', 'risk.json')]
+        _cache[key] = tuple(json.loads(f.read_text()) if f.exists() else {} for f in files)
+    return _cache[key]
 
 
 def supports_bundle(bundle: dict) -> bool:
@@ -51,12 +51,18 @@ def supports_bundle(bundle: dict) -> bool:
     nodes = {n.get('id') for n in bundle.get('roads', {}).get('nodes', [])}
     if not nodes:
         return True  # no geometry to contradict (mock world)
-    terrain, _ = _load_data()
-    return set(terrain.get('node_terrain', {})) <= nodes
+    terrain, _ = _load_data(bundle)
+    return bool(terrain.get('node_terrain')) and set(terrain['node_terrain']) <= nodes
 
 
-def flood_scenarios() -> dict:
-    terrain, _ = _load_data()
+def provenance(bundle: dict | None = None) -> dict:
+    """Where the risk inputs come from, for display next to any risk overlay."""
+    terrain, _ = _load_data(bundle)
+    return {k: terrain.get(k) for k in ('data_mode', 'region', 'data_sources', 'risk_index', 'limitations')}
+
+
+def flood_scenarios(bundle: dict | None = None) -> dict:
+    terrain, _ = _load_data(bundle)
     return terrain.get('flood_scenarios', {})
 
 
@@ -69,15 +75,33 @@ def _real_site(bundle: dict, kind: str, near_uv: list[float]) -> tuple[str, list
     return site['id'], list(site['board_uv'])
 
 
-def load_risk_data(bundle_path: Path | None = None) -> dict:
+def load_risk_data(bundle: dict | Path | None = None) -> dict:
     """Load risk data (backward compatible)."""
-    _, risk_data = _load_data(bundle_path)
+    _, risk_data = _load_data(bundle)
     return risk_data
 
 
+def exposure_index(t_info: dict) -> float:
+    """Educational index over measured inputs (see terrain.json risk_index); not a probability."""
+    flood = 1.0 if t_info.get('flood_depth_rp10_m') else 0.7 if t_info.get('flood_depth_rp100_m') else 0.0
+    height = max(0.0, 1 - t_info.get('height_above_river_m', 30) / 30)
+    proximity = math.exp(-t_info.get('distance_to_river_m', 300) / 200)
+    return round(min(0.95, max(0.05, 0.5 * flood + 0.3 * height + 0.2 * proximity)), 3)
+
+
+def node_risk(t_info: dict) -> float:
+    """Measured bundles use exposure_index; the schematic fixture keeps its illustrative formula."""
+    if 'flood_depth_rp10_m' in t_info:
+        return exposure_index(t_info)
+    return calculate_flood_probability(
+        elevation_m=t_info.get('elevation_m', 1000),
+        distance_to_river_m=t_info.get('distance_to_river_m', 300),
+        slope_percent=t_info.get('slope_percent', 10),
+        flood_history_events=t_info.get('flood_history_events') or 0)
+
+
 # =============================================================================
-# REAL FLOOD RISK FORMULAS
-# Based on: FEMA Flood Risk Assessment + Nepal DRR Guidelines
+# ILLUSTRATIVE FORMULAS (schematic fixture; authored weights)
 # =============================================================================
 
 def calculate_flood_probability(
@@ -98,7 +122,7 @@ def calculate_flood_probability(
     4. History factor: P_hist = min(1, history_events / 5)
 
     Combined: P = w1*P_elev + w2*P_prox + w3*P_slope + w4*P_hist
-    Weights based on FEMA methodology.
+    Weights are authored for the schematic teaching fixture.
     """
     # Elevation factor (lower = higher risk)
     elev_normalized = max(0, min(1, (max_elevation - elevation_m) / (max_elevation - base_elevation)))
@@ -112,7 +136,7 @@ def calculate_flood_probability(
     # Historical factor
     history_factor = min(1.0, flood_history_events / 5)
 
-    # Weighted combination (FEMA-style weights)
+    # Weighted combination (authored weights)
     weights = {'elevation': 0.30, 'proximity': 0.35, 'slope': 0.15, 'history': 0.20}
 
     probability = (
@@ -132,7 +156,7 @@ def calculate_evacuation_time(
     warning_time_hours: float = 4.0
 ) -> int:
     """
-    Calculate evacuation time using WHO emergency guidelines.
+    Illustrative evacuation-time model (authored assumptions, not WHO guidance).
 
     Components:
     1. Warning dissemination: 15-60 min depending on infrastructure
@@ -171,7 +195,7 @@ def calculate_casualties(
     vulnerability_factor: float = 0.25
 ) -> int:
     """
-    Calculate potential casualties using disaster research model.
+    Illustrative casualty model (authored assumptions; no measured mortality data).
 
     Formula: C = P × V × H × (1 - E)
     Where:
@@ -180,12 +204,11 @@ def calculate_casualties(
     - H = hazard intensity (flood probability)
     - E = evacuation efficiency (0-1)
 
-    Based on: Nepal DRR National Framework casualty models
     """
     # Affected population (those in flood zone)
     affected = population * flood_probability
 
-    # Base mortality rate for flash floods (research: 0.01-0.05)
+    # Authored mortality rate for the teaching model
     base_mortality = 0.025
 
     # Adjusted for vulnerability
@@ -203,10 +226,10 @@ def calculate_casualties(
 
 def get_risk_zones(bundle: dict, risk_data: dict) -> list[dict]:
     """
-    Generate risk zones from REAL terrain data.
+    Generate risk zones from the bundle's terrain data.
     Each zone has probability calculated from actual elevation/river data.
     """
-    terrain, _ = _load_data()
+    terrain, _ = _load_data(bundle)
     if not terrain:
         return _get_fallback_risk_zones(risk_data)
 
@@ -222,13 +245,7 @@ def get_risk_zones(bundle: dict, risk_data: dict) -> list[dict]:
         if population == 0:
             continue  # Skip non-populated nodes
 
-        # Calculate REAL flood probability
-        flood_prob = calculate_flood_probability(
-            elevation_m=terrain_info.get('elevation_m', 1000),
-            distance_to_river_m=terrain_info.get('distance_to_river_m', 300),
-            slope_percent=terrain_info.get('slope_percent', 10),
-            flood_history_events=terrain_info.get('flood_history_events', 0)
-        )
+        flood_prob = node_risk(terrain_info)
 
         # Determine risk level from probability
         if flood_prob >= 0.7:
@@ -384,7 +401,7 @@ def get_risk_zones_for_snapshot(bundle: dict, state: dict, mode: str = 'relief')
     Get risk zones for WorldSnapshot, accounting for placed tokens.
     Works in both prevention and relief modes.
     """
-    terrain, risk_data = _load_data()
+    terrain, risk_data = _load_data(bundle)
     if not supports_bundle(bundle):
         return []
 
@@ -413,7 +430,7 @@ def get_risk_zones_for_snapshot(bundle: dict, state: dict, mode: str = 'relief')
 
 
 # =============================================================================
-# VULNERABILITY & EFFECTIVENESS (research-based)
+# VULNERABILITY & EFFECTIVENESS (illustrative model)
 # =============================================================================
 
 def calculate_vulnerability_score(bundle: dict, state: dict, risk_data: dict) -> float:
@@ -421,7 +438,7 @@ def calculate_vulnerability_score(bundle: dict, state: dict, risk_data: dict) ->
     Calculate system vulnerability using terrain + token placement.
     Returns 0 (fully prepared) to 1 (completely vulnerable).
     """
-    terrain, _ = _load_data()
+    terrain, _ = _load_data(bundle)
     if not terrain:
         return 0.5
 
@@ -444,12 +461,7 @@ def calculate_vulnerability_score(bundle: dict, state: dict, risk_data: dict) ->
         if pop == 0:
             continue
 
-        flood_prob = calculate_flood_probability(
-            elevation_m=t_info.get('elevation_m', 1000),
-            distance_to_river_m=t_info.get('distance_to_river_m', 300),
-            slope_percent=t_info.get('slope_percent', 10),
-            flood_history_events=t_info.get('flood_history_events', 0)
-        )
+        flood_prob = node_risk(t_info)
 
         total_pop += pop
         weighted_risk += pop * flood_prob
@@ -473,7 +485,7 @@ def calculate_vulnerability_score(bundle: dict, state: dict, risk_data: dict) ->
 
 def calculate_lives_at_risk(bundle: dict, risk_data: dict, scenario: str = 'default') -> int:
     """Calculate lives at risk using real population + flood probability."""
-    terrain, _ = _load_data()
+    terrain, _ = _load_data(bundle)
     if not terrain:
         return 320  # Fallback
 
@@ -483,12 +495,7 @@ def calculate_lives_at_risk(bundle: dict, risk_data: dict, scenario: str = 'defa
     lives = 0
     for node_id, t_info in node_terrain.items():
         pop = population_data.get(node_id, {}).get('population', 0)
-        flood_prob = calculate_flood_probability(
-            elevation_m=t_info.get('elevation_m', 1000),
-            distance_to_river_m=t_info.get('distance_to_river_m', 300),
-            slope_percent=t_info.get('slope_percent', 10),
-            flood_history_events=t_info.get('flood_history_events', 0)
-        )
+        flood_prob = node_risk(t_info)
 
         if flood_prob >= 0.5:  # High risk threshold
             lives += pop
@@ -505,14 +512,14 @@ def calculate_prevention_effectiveness(
     """
     Calculate prevention effectiveness using real formulas.
     """
-    terrain, _ = _load_data()
+    terrain, _ = _load_data(bundle)
     tokens = state.get('tokens', {})
     if isinstance(tokens, list):
         tokens = {str(i): t for i, t in enumerate(tokens)}
 
     placed_types = {t.get('type') for t in tokens.values()}
     population_data = terrain.get('population_data', {}) if terrain else {}
-    total_pop = population_data.get('total_population', 1191)
+    total_pop = population_data.get('total_population', 0)
 
     # Calculate baseline (no preparation)
     baseline_evac_efficiency = 0.60  # 60% can evacuate without prep
@@ -565,9 +572,9 @@ def compare_outcomes(
     """
     Compare outcomes using research-based casualty and time models.
     """
-    terrain, _ = _load_data()
+    terrain, _ = _load_data(bundle)
     population_data = terrain.get('population_data', {}) if terrain else {}
-    total_pop = population_data.get('total_population', 1191)
+    total_pop = population_data.get('total_population', 0)
 
     tokens = state.get('tokens', {})
     if isinstance(tokens, list):
@@ -640,7 +647,7 @@ def best_prevention_suggestion(
     Suggest optimal prevention action using risk analysis.
     Prioritizes by lives protected per cost.
     """
-    terrain, _ = _load_data()
+    terrain, _ = _load_data(bundle)
     tokens = state.get('tokens', {})
     if isinstance(tokens, list):
         tokens = {str(i): t for i, t in enumerate(tokens)}
@@ -656,7 +663,7 @@ def best_prevention_suggestion(
 
     highest_risk = critical_zones[0]
     population_data = terrain.get('population_data', {}) if terrain else {}
-    total_pop = population_data.get('total_population', 1191)
+    total_pop = population_data.get('total_population', 0)
 
     # Calculate impact of each token type
     candidates = []

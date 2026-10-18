@@ -1,51 +1,54 @@
 """
-Gemini AI Adapter for FLOODSHIFT
-Provides intelligent analysis for both Relief and Prevention modes.
+Gemini AI Adapter for FLOODSHIFT prevention mode.
 
-Uses Gemini to:
-- Analyze risk based on real terrain/population data
-- Explain evacuation strategies
-- Compare prevention vs relief outcomes
-- Answer user questions grounded in simulation state
+Numbers (risk index, casualties, evacuation times, comparisons) are always computed
+by deterministic code. Gemini only turns those supplied facts into a short
+explanation, so it can never invent statistics. Without a key or SDK every method
+returns the same numbers with a template explanation (mode="TEXT").
+
+Uses the current Google Gen AI SDK (`google-genai`, pyproject `ai` extra) — the
+older `google.generativeai` package is deprecated and is not a dependency.
+Relief-mode questions go through backend/narration/gemini_adapter.py (tool-grounded).
 """
 from __future__ import annotations
-import os
 import json
+import os
 from typing import Literal
 
+from backend.narration.gemini_adapter import api_failure_reason
+
 try:
-    import google.generativeai as genai
+    from google import genai
     GEMINI_AVAILABLE = True
 except ImportError:
     GEMINI_AVAILABLE = False
     genai = None
 
+SYSTEM_INSTRUCTION = '''You explain results of the FLOODSHIFT educational flood-preparedness
+simulation. Use ONLY the numbers in the supplied JSON facts; never compute, estimate or
+add new numbers. Call them model results. Do not claim real lives saved, safe routes,
+engineering validation or official guidance. At most 60 words, plain text.'''
+MAX_WORDS = 80
+
 
 class GeminiAdapter:
-    """
-    Wrapper for Gemini API with FLOODSHIFT-specific prompts.
-    """
+    """Explains deterministic prevention results with Gemini; never the source of numbers."""
 
-    def __init__(self, api_key: str | None = None, model: str | None = None):
-        self.api_key = api_key or os.environ.get("GEMINI_API_KEY")
-        self.model_name = model or os.environ.get("GEMINI_MODEL", "gemini-1.5-flash")
-        self._model = None
-        self._status = "not_configured"
-
-        if not GEMINI_AVAILABLE:
-            self._status = "sdk_not_installed"
-            return
-
-        if not self.api_key:
-            self._status = "no_api_key"
-            return
-
-        try:
-            genai.configure(api_key=self.api_key)
-            self._model = genai.GenerativeModel(self.model_name)
+    def __init__(self, api_key: str | None = None, model: str | None = None, timeout_ms: int = 10000,
+                 client=None):
+        self.api_key = api_key or os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
+        self.model_name = model or os.environ.get("GEMINI_MODEL", "gemini-flash-latest")
+        self.timeout_ms = timeout_ms
+        self._client = client
+        if client is not None:
             self._status = "ready"
-        except Exception as e:
-            self._status = f"error: {str(e)}"
+        elif not GEMINI_AVAILABLE:
+            self._status = "sdk_not_installed"
+        elif not self.api_key:
+            self._status = "no_api_key"
+        else:
+            self._status = "ready"
+        self.last_reason: str | None = None
 
     @property
     def status(self) -> str:
@@ -53,7 +56,37 @@ class GeminiAdapter:
 
     @property
     def is_ready(self) -> bool:
-        return self._status == "ready" and self._model is not None
+        return self._status == "ready"
+
+    def _explain(self, task: str, facts: dict) -> str | None:
+        """Short grounded text, or None (reason in last_reason). Never raises or echoes errors."""
+        if not self.is_ready:
+            self.last_reason = self._status
+            return None
+        try:
+            if self._client is None:
+                self._client = genai.Client(api_key=self.api_key, http_options={
+                    'timeout': self.timeout_ms, 'retry_options': {'attempts': 1}})
+            response = self._client.models.generate_content(
+                model=self.model_name,
+                contents=json.dumps({'task': task, 'facts': facts}, ensure_ascii=False, default=str),
+                config={'system_instruction': SYSTEM_INSTRUCTION, 'max_output_tokens': 1024})
+            text = getattr(response, 'text', None)
+            if not isinstance(text, str) or not text.strip():
+                self.last_reason = 'empty_response'
+                return None
+            if len(text.split()) > MAX_WORDS:
+                self.last_reason = 'response_too_long'
+                return None
+            self.last_reason = None
+            return text.strip()
+        except Exception as error:
+            # SDK exception text may contain transport or key data; return a code only.
+            self.last_reason = api_failure_reason(error)
+            return None
+
+    def _mode(self, text: str | None) -> dict:
+        return {'mode': 'LIVE' if text else 'TEXT', 'reason': None if text else self.last_reason}
 
     def analyze_risk(
         self,
@@ -63,41 +96,14 @@ class GeminiAdapter:
         population: int,
         historical_floods: int = 0
     ) -> dict:
-        """
-        Use Gemini to analyze flood risk for a location.
-        Returns structured risk assessment.
-        """
-        if not self.is_ready:
-            return self._fallback_risk_analysis(elevation_m, distance_to_river_m, population)
-
-        prompt = f"""You are a flood risk analyst. Analyze this location:
-
-Location Data:
-- Elevation: {elevation_m}m above sea level
-- Distance to nearest river: {distance_to_river_m}m
-- Population: {population} people
-- Historical flood events in area: {historical_floods}
-
-Based on hydrology principles:
-1. Calculate flood_probability (0.0 to 1.0)
-2. Determine risk_level (low/medium/high/critical)
-3. Estimate evacuation_time_minutes for this population
-4. Calculate potential casualties if no preparation (use research-based formula)
-
-Respond in JSON format only:
-{{"flood_probability": 0.X, "risk_level": "X", "evacuation_time_minutes": X, "potential_casualties": X, "reasoning": "brief explanation"}}
-"""
-        try:
-            response = self._model.generate_content(prompt)
-            text = response.text.strip()
-            # Extract JSON from response
-            if "```json" in text:
-                text = text.split("```json")[1].split("```")[0]
-            elif "```" in text:
-                text = text.split("```")[1].split("```")[0]
-            return json.loads(text)
-        except Exception as e:
-            return self._fallback_risk_analysis(elevation_m, distance_to_river_m, population)
+        """Formula risk analysis; Gemini may add an explanation but never changes numbers."""
+        result = self._fallback_risk_analysis(elevation_m, distance_to_river_m, population)
+        text = self._explain('Explain this location risk result in two sentences.',
+                             {**result, 'node': node_data, 'elevation_m': elevation_m,
+                              'distance_to_river_m': distance_to_river_m})
+        if text:
+            result['reasoning'] = text
+        return {**result, **self._mode(text)}
 
     def _fallback_risk_analysis(
         self,
@@ -105,22 +111,11 @@ Respond in JSON format only:
         distance_to_river_m: float,
         population: int
     ) -> dict:
-        """Fallback formula-based risk analysis when Gemini unavailable."""
-        # Real formula based on flood research:
-        # Risk increases with: lower elevation, closer to river, higher population
-
-        # Elevation factor (lower = higher risk)
-        # Base elevation for Rasuwa is ~800-2000m
+        """Illustrative formula (authored weights and rates, not a calibrated model)."""
         elev_factor = max(0, min(1, (1500 - elevation_m) / 700))
-
-        # River proximity factor (closer = higher risk)
-        # Within 100m is critical, >500m is low risk
         river_factor = max(0, min(1, (500 - distance_to_river_m) / 500))
-
-        # Combined probability using weighted geometric mean
         flood_probability = round((elev_factor * 0.4 + river_factor * 0.6), 2)
 
-        # Risk level thresholds
         if flood_probability >= 0.7:
             risk_level = "critical"
         elif flood_probability >= 0.5:
@@ -130,14 +125,9 @@ Respond in JSON format only:
         else:
             risk_level = "low"
 
-        # Evacuation time: ~2 min per person for organized evacuation
-        # Plus base time for warning dissemination
         evacuation_time = 30 + (population * 0.5)
-
-        # Casualty model from disaster research:
-        # C = P × V × (1 - E) where P=population, V=vulnerability, E=evacuation_efficiency
         vulnerability = flood_probability
-        evacuation_efficiency = 0.7  # Assume 70% can evacuate without preparation
+        evacuation_efficiency = 0.7
         potential_casualties = int(population * vulnerability * (1 - evacuation_efficiency))
 
         return {
@@ -145,7 +135,8 @@ Respond in JSON format only:
             "risk_level": risk_level,
             "evacuation_time_minutes": int(evacuation_time),
             "potential_casualties": potential_casualties,
-            "reasoning": f"Elevation {elevation_m}m, {distance_to_river_m}m from river"
+            "reasoning": f"Model result from elevation {elevation_m} m and {distance_to_river_m} m to the river.",
+            "model_only": True,
         }
 
     def explain_prevention_strategy(
@@ -154,44 +145,24 @@ Respond in JSON format only:
         risk_zones: list[dict],
         metrics: dict
     ) -> str:
-        """
-        Generate intelligent explanation of current prevention strategy.
-        """
-        if not self.is_ready:
-            return self._fallback_prevention_explanation(placed_tokens, metrics)
-
-        prompt = f"""You are a disaster preparedness expert explaining an evacuation plan.
-
-Current Prevention Measures:
-{json.dumps(placed_tokens, indent=2)}
-
-Risk Zones:
-{json.dumps(risk_zones, indent=2)}
-
-Current Metrics:
-{json.dumps(metrics, indent=2)}
-
-In 2-3 sentences, explain:
-1. What the current preparation accomplishes
-2. Any gaps in coverage
-3. Priority next action
-
-Be specific about lives protected and evacuation improvements.
-"""
-        try:
-            response = self._model.generate_content(prompt)
-            return response.text.strip()
-        except Exception:
-            return self._fallback_prevention_explanation(placed_tokens, metrics)
+        """Grounded explanation of the current prevention setup."""
+        text = self._explain('In 2-3 sentences: what the current preparation does in this model, '
+                             'the remaining gaps, and the next piece to place.',
+                             {'placed_tokens': [t.get('type') for t in placed_tokens],
+                              'risk_zones': [{k: z.get(k) for k in ('zone_id', 'risk_level', 'flood_probability',
+                                                                     'population_exposed', 'is_protected')}
+                                             for z in risk_zones],
+                              'metrics': metrics})
+        return text or self._fallback_prevention_explanation(placed_tokens, metrics)
 
     def _fallback_prevention_explanation(self, placed_tokens: list, metrics: dict) -> str:
-        """Fallback explanation without Gemini."""
+        """Template explanation from the same facts."""
         token_types = [t.get('type', 'unknown') for t in placed_tokens]
         lives = metrics.get('lives_protected', 0)
         vuln = metrics.get('vulnerability_score', 1.0)
 
         if not placed_tokens:
-            return "No prevention measures in place. All population centers remain at risk."
+            return "No prevention measures in place. All modeled population zones remain at risk."
 
         measures = []
         if 'shelter' in token_types:
@@ -203,7 +174,8 @@ Be specific about lives protected and evacuation improvements.
         if 'food_shelter' in token_types:
             measures.append("emergency supplies stocked")
 
-        return f"Current preparation: {', '.join(measures)}. Estimated {lives} lives protected, vulnerability reduced to {vuln:.0%}."
+        return (f"Current preparation: {', '.join(measures)}. Model estimate: {lives} people protected, "
+                f"vulnerability index {vuln:.0%}. Illustrative, not a real outcome.")
 
     def compare_outcomes(
         self,
@@ -211,58 +183,28 @@ Be specific about lives protected and evacuation improvements.
         with_prep: dict,
         prevention_cost: int
     ) -> dict:
-        """
-        Use Gemini to generate intelligent comparison analysis.
-        """
-        if not self.is_ready:
-            return self._fallback_comparison(without_prep, with_prep, prevention_cost)
-
-        prompt = f"""You are a disaster economics analyst comparing two scenarios.
-
-WITHOUT Preparation:
-- Casualties: {without_prep.get('casualties_model', 0)}
-- Evacuation time: {without_prep.get('evacuation_time_minutes', 0)} minutes
-- Recovery cost: ${without_prep.get('recovery_cost_model', 0) * 100000}
-
-WITH Preparation:
-- Casualties: {with_prep.get('casualties_model', 0)}
-- Evacuation time: {with_prep.get('evacuation_time_minutes', 0)} minutes
-- Recovery cost: ${with_prep.get('recovery_cost_model', 0) * 100000}
-
-Prevention Investment: ${prevention_cost * 50000}
-
-Calculate:
-1. Lives saved
-2. Cost avoided
-3. Return on investment (ROI)
-4. Brief recommendation
-
-Respond in JSON:
-{{"lives_saved": X, "cost_avoided_usd": X, "roi_percent": X, "recommendation": "brief text"}}
-"""
-        try:
-            response = self._model.generate_content(prompt)
-            text = response.text.strip()
-            if "```json" in text:
-                text = text.split("```json")[1].split("```")[0]
-            elif "```" in text:
-                text = text.split("```")[1].split("```")[0]
-            return json.loads(text)
-        except Exception:
-            return self._fallback_comparison(without_prep, with_prep, prevention_cost)
+        """Deterministic comparison; Gemini only writes the recommendation sentence."""
+        result = self._fallback_comparison(without_prep, with_prep, prevention_cost)
+        text = self._explain('Write a one-sentence recommendation comparing the two model outcomes.',
+                             {'without_preparation': without_prep, 'with_preparation': with_prep, **result})
+        if text:
+            result['recommendation'] = text
+        return {**result, **self._mode(text)}
 
     def _fallback_comparison(self, without_prep: dict, with_prep: dict, prevention_cost: int) -> dict:
-        """Fallback comparison without Gemini."""
+        """Differences in model units; no currency or real casualty claims."""
         lives_saved = without_prep.get('casualties_model', 0) - with_prep.get('casualties_model', 0)
-        cost_avoided = (without_prep.get('recovery_cost_model', 0) - with_prep.get('recovery_cost_model', 0)) * 100000
-        investment = prevention_cost * 50000
-        roi = ((cost_avoided - investment) / max(investment, 1)) * 100
+        cost_avoided = without_prep.get('recovery_cost_model', 0) - with_prep.get('recovery_cost_model', 0)
+        roi = (cost_avoided - prevention_cost) / max(prevention_cost, 1)
 
         return {
-            "lives_saved": lives_saved,
-            "cost_avoided_usd": cost_avoided,
-            "roi_percent": round(roi, 1),
-            "recommendation": f"Prevention investment saves {lives_saved} lives with {roi:.0f}% ROI."
+            "lives_saved_model": lives_saved,
+            "cost_avoided_model": cost_avoided,
+            "prevention_investment_model": prevention_cost,
+            "roi_ratio": round(roi, 2),
+            "recommendation": (f"In this teaching model, preparation lowers modeled casualties by {lives_saved} "
+                               f"and recovery cost by {cost_avoided} model units."),
+            "model_only": True,
         }
 
     def answer_question(
@@ -271,31 +213,16 @@ Respond in JSON:
         world_state: dict,
         mode: Literal["prevention", "relief"] = "relief"
     ) -> str:
-        """
-        Answer user questions grounded in current simulation state.
-        """
-        if not self.is_ready:
-            return "AI analysis unavailable. Please check Gemini configuration."
-
-        context = f"""You are an AI assistant for FLOODSHIFT, a disaster simulation.
-Current mode: {mode}
-
-World State:
-- Phase: {world_state.get('phase', 'unknown')}
-- Tokens placed: {len(world_state.get('tokens', []))}
-- Blocked roads: {world_state.get('metrics', {}).get('blocked_roads', 0)}
-- People reachable for medical: {world_state.get('metrics', {}).get('people_reachable_for_medical', 0)}
-
-Answer this question concisely (2-3 sentences), grounded in the data above:
-{question}
-
-Important: Only state facts from the data. Don't invent statistics.
-"""
-        try:
-            response = self._model.generate_content(context)
-            return response.text.strip()
-        except Exception as e:
-            return f"Unable to process question: {str(e)}"
+        """Answer from a compact state summary; unknown facts stay unknown."""
+        metrics = world_state.get('metrics', {})
+        facts = {'mode': mode, 'phase': world_state.get('phase'),
+                 'tokens_placed': [t.get('type') for t in world_state.get('tokens', [])],
+                 'metrics': metrics}
+        text = self._explain(f'Answer in 2-3 sentences using only the facts: {question[:500]}', facts)
+        if text:
+            return text
+        return (f"Model state: phase {facts['phase']}, {metrics.get('blocked_roads', 0)} blocked road(s), "
+                f"{len(facts['tokens_placed'])} piece(s) placed. AI explanation unavailable ({self.last_reason}).")
 
 
 # Singleton instance

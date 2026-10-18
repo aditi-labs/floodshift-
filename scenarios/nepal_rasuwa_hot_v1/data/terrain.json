@@ -1,0 +1,172 @@
+{
+  "terrain_version": 2,
+  "scenario_id": "nepal_rasuwa_hot_v1",
+  "data_mode": "MEASURED_OPEN_DATA",
+  "region": "Shyaphru Bensi, Rasuwa District, Nepal (2.4 km HOT AOI)",
+  "coordinate_system": "EPSG:32645",
+  "board_bounds_projected": [
+    336089.89297685644,
+    3115343.646000852,
+    338489.89297685644,
+    3117743.646000852
+  ],
+  "data_sources": [
+    {
+      "id": "copernicus_glo30",
+      "url": "https://copernicus-dem-30m.s3.amazonaws.com/Copernicus_DSM_COG_10_N28_00_E085_00_DEM/Copernicus_DSM_COG_10_N28_00_E085_00_DEM.tif",
+      "clip_file": "risk/copernicus_glo30_dem_clip.tif",
+      "clip_sha256": "a2e3ee1d1278cac218b3a43c5dd25b71905ad793b72f7a0355fed9ec131e18b2",
+      "license": "Copernicus DEM GLO-30, free and open (© DLR e.V. 2010-2014 and © Airbus 2014-2018, provided under COPERNICUS by the EU and ESA)",
+      "used_for": "elevation, slope, height above nearest mapped river point",
+      "retrieved_date": "2026-10-17"
+    },
+    {
+      "id": "worldpop_2020_constrained",
+      "url": "https://data.worldpop.org/GIS/Population/Global_2000_2020_Constrained/2020/BSGM/NPL/npl_ppp_2020_constrained.tif",
+      "clip_file": "risk/worldpop_2020_constrained_clip.tif",
+      "clip_sha256": "45968d42c6f35b4db400d4b9ef4852e6e4a4360e9705f0f6012ec9ee5d10251c",
+      "license": "CC BY 4.0, WorldPop (www.worldpop.org), University of Southampton",
+      "used_for": "modeled residents within 400 m of each zone node (nearest-node assignment, no double counting)",
+      "retrieved_date": "2026-10-17",
+      "full_file_sha256": "9050709d357ac29123d55044cd656e5a9936a2ca14a73cb8b6f635ee479bc9bc"
+    },
+    {
+      "id": "copernicus_glofas_v2.1.2",
+      "url": "https://jeodpp.jrc.ec.europa.eu/ftp/jrc-opendata/CEMS-GLOFAS/flood_hazard",
+      "clip_file": "../../nepal_rasuwa_reasoning_v1/data/flood/",
+      "license": "free and open Copernicus product",
+      "used_for": "max modeled RP10/RP100 depth within 100 m; quality mask flags spurious depths"
+    },
+    {
+      "id": "osm_waterways",
+      "url": "https://production-raw-data-api.s3.amazonaws.com/ISO3/NPL_CORRIDOR/waterways/hot_flood_npl_corridor_waterways_osm.geojson",
+      "license": "ODbL, © OpenStreetMap contributors",
+      "used_for": "distance to nearest mapped river or stream"
+    }
+  ],
+  "risk_index": {
+    "name": "educational_exposure_index",
+    "weights": {
+      "modeled_flood_footprint": 0.5,
+      "height_above_river": 0.3,
+      "river_proximity": 0.2
+    },
+    "terms": {
+      "modeled_flood_footprint": "1 if RP10 depth > 0, 0.7 if only RP100 depth > 0, else 0",
+      "height_above_river": "max(0, 1 - height_above_river_m / 30)",
+      "river_proximity": "exp(-distance_to_river_m / 200)"
+    },
+    "caveat": "Authored weights over measured inputs; a relative teaching index, not a flood probability."
+  },
+  "node_terrain": {
+    "336550.940:3116285.243": {
+      "zone_label": "unnamed settlement node/14139984646",
+      "elevation_m": 1496.8,
+      "slope_percent": 37.4,
+      "distance_to_river_m": 221.5,
+      "height_above_river_m": 79.4,
+      "flood_depth_rp10_m": 0.0,
+      "flood_depth_rp100_m": 0.0,
+      "flood_depth_quality_flagged": false,
+      "terrain_type": "measured",
+      "flood_history_events": null
+    },
+    "336740.745:3116467.408": {
+      "zone_label": "Shyaphru",
+      "elevation_m": 1463.9,
+      "slope_percent": 42.3,
+      "distance_to_river_m": 152.5,
+      "height_above_river_m": 41.9,
+      "flood_depth_rp10_m": 11.62,
+      "flood_depth_rp100_m": 12.11,
+      "flood_depth_quality_flagged": true,
+      "terrain_type": "measured",
+      "flood_history_events": null
+    },
+    "337292.463:3116549.174": {
+      "zone_label": "Shyaphru Bensi",
+      "elevation_m": 1447.1,
+      "slope_percent": 26.7,
+      "distance_to_river_m": 71.1,
+      "height_above_river_m": 18.1,
+      "flood_depth_rp10_m": 15.14,
+      "flood_depth_rp100_m": 15.67,
+      "flood_depth_quality_flagged": true,
+      "terrain_type": "measured",
+      "flood_history_events": null
+    }
+  },
+  "population_data": {
+    "source": "WorldPop 2020 constrained (modeled estimate, not a census count)",
+    "nodes": {
+      "336550.940:3116285.243": {
+        "population": 105,
+        "households": null,
+        "vulnerable_pct": null
+      },
+      "336740.745:3116467.408": {
+        "population": 435,
+        "households": null,
+        "vulnerable_pct": null
+      },
+      "337292.463:3116549.174": {
+        "population": 710,
+        "households": null,
+        "vulnerable_pct": null
+      }
+    },
+    "total_population": 1250,
+    "frame_total_population": 1582,
+    "total_households": null
+  },
+  "flood_scenarios": {
+    "rp10": {
+      "name": "10-year return-period river flood (modeled)",
+      "probability": 0.1,
+      "affected_edges": [
+        "crossing_east_road",
+        "crossing_south_road",
+        "crossing_west_road",
+        "road-06f930b5e476",
+        "road-1991820fb31f",
+        "road-5cd324e743fa",
+        "road-8572c07bffde",
+        "road-89c140a04a3b",
+        "road-9d1ddc3cee5d",
+        "road-9fa449156a79",
+        "road-b33aa9dfc079",
+        "road-d7db1525eb16",
+        "road-eb4c2e2311b1"
+      ],
+      "quality_flagged_wet_pixels": 82,
+      "wet_pixels": 90
+    },
+    "rp100": {
+      "name": "100-year return-period river flood (modeled)",
+      "probability": 0.01,
+      "affected_edges": [
+        "crossing_east_road",
+        "crossing_south_road",
+        "crossing_west_road",
+        "road-06f930b5e476",
+        "road-1991820fb31f",
+        "road-5cd324e743fa",
+        "road-8572c07bffde",
+        "road-89c140a04a3b",
+        "road-9d1ddc3cee5d",
+        "road-9fa449156a79",
+        "road-b33aa9dfc079",
+        "road-d7db1525eb16",
+        "road-eb4c2e2311b1"
+      ],
+      "quality_flagged_wet_pixels": 82,
+      "wet_pixels": 90
+    }
+  },
+  "limitations": [
+    "GloFAS depths are ~90 m statistical return-period maps; most wet pixels here are quality-flagged.",
+    "WorldPop is a modeled distribution of residents, not a headcount; zones count only cells within 400 m.",
+    "Copernicus GLO-30 is a surface model (includes buildings/trees); height above river uses nearest mapped river point.",
+    "No mortality, casualty or evacuation-time data is measured; those outputs remain illustrative model assumptions."
+  ]
+}

@@ -47,25 +47,20 @@ The flagship scenario is **the 26–27 August 2026 flood/mudflow/rockflow impact
 - **Counterfactual:** "If you placed this temporary crossing, our **model** would reconnect these nodes." Do **not** say that an intervention would definitely have worked in the real event.
 - **Not an emergency tool:** do not describe routes as safe evacuation instructions, or claim hydrological/structural engineering validation.
 
-## Real data sources (terrain.json)
+## Prevention-mode data (terrain.json, per scenario bundle)
 
-The prevention mode uses real-world data stored in `scenarios/nepal_rasuwa_v1/data/terrain.json`:
+On the real map (`nepal_rasuwa_hot_v1`, also used by `_reasoning_v1`), `terrain.json` is built by `scripts/geodata/build_risk_data.py` from measured open data. Clipped rasters and SHA-256 hashes are committed:
 
-| Data Type | Source | Values |
-|-----------|--------|--------|
-| Elevation | NASA SRTM 30m Digital Elevation Model | 800-2200m across Rasuwa corridor |
-| Population | Nepal Central Bureau of Statistics 2021 Census | 1,191 people, 268 households |
-| Flood history | UNOSAT Flood Assessment August 2026 | Historical flood events per node |
-| Rivers | OpenStreetMap waterways | Trisuli River (80m width) + tributaries |
-| Infrastructure | OSM + local surveys | Bridge vulnerability scores |
+| Data Type | Source | Use |
+|-----------|--------|-----|
+| Elevation, slope, height above river | Copernicus DEM GLO-30 (AWS open data) | Zone nodes at ~1,447–1,497 m |
+| Modeled residents | WorldPop 2020 constrained, 100 m (CC BY 4.0) | ~1,250 within 400 m of three settlement zones (modeled estimate, not a census) |
+| Flood footprint | Copernicus GloFAS v2.1.2 RP10/RP100 depth (~90 m) | Most wet pixels are quality-flagged |
+| Rivers | OpenStreetMap waterways (ODbL) | Distance to nearest mapped river |
 
-**Research-based formulas:**
+**Risk index:** an *educational exposure index* with authored weights (0.5 modeled flood footprint, 0.3 height above river, 0.2 river proximity). It is not a flood probability. Evacuation-time, mortality and casualty figures in prevention outputs are authored teaching assumptions; no FEMA/WHO/Nepal DRR method is claimed. The schematic bundle's `terrain.json` holds illustrative values for fictional nodes.
 
-- **Flood Probability:** FEMA multi-factor model weighing elevation (30%), river proximity (35%), slope (15%), and flood history (20%)
-- **Evacuation Time:** WHO guidelines (base time + 2.5 min/person)
-- **Casualty Model:** Nepal DRR National Framework: `C = affected × mortality_rate × (1 - evacuation_efficiency)`
-
-These formulas run locally without Gemini. When Gemini is available, it provides intelligent analysis and explanations grounded in the calculated values.
+Gemini never computes these numbers; `backend/ai/gemini_adapter.py` (google-genai SDK) only explains supplied facts, with a TEXT fallback.
 
 ## Decisions that are deliberately NOT finalized
 
@@ -899,34 +894,13 @@ POST /prevention/compare       → With vs without preparation outcomes
 | `backend/ai/gemini_adapter.py` | Gemini AI integration with fallback formulas |
 | `scenarios/nepal_rasuwa_v1/data/terrain.json` | Real terrain data (NASA SRTM, Nepal Census, UNOSAT) |
 
-### Real Data Sources
+### Data and index
 
-| Data | Source | Usage |
-|------|--------|-------|
-| Elevation (800-2200m) | NASA SRTM 30m Digital Elevation Model | Flood probability calculation |
-| Population (1,191 people) | Nepal CBS 2021 Census | Casualty and evacuation modeling |
-| Flood history | UNOSAT Flood Assessment Aug 2026 | Historical risk weighting |
-| Infrastructure | OpenStreetMap waterways | River proximity calculations |
+See "Prevention-mode data" in §00. Real map zones (measured inputs; index is educational):
 
-### Research-Based Formulas
-
-```
-Flood Probability (FEMA methodology):
-  P = 0.30×elevation + 0.35×river_proximity + 0.15×slope + 0.20×history
-
-Evacuation Time (WHO guidelines):
-  T = base_time + (population × 2.5 min/person)
-
-Casualties (Nepal DRR National Framework):
-  C = affected × mortality_rate × (1 - evacuation_efficiency)
-```
-
-### Demo Metrics (Real Data)
-
-- **Village (zone_village):** Critical risk, prob=0.828, pop=412, elev=850m
-- **East (zone_east):** Critical risk, prob=0.732, pop=271, elev=890m
-- **West (zone_west):** High risk, prob=0.562, pop=198, elev=980m
-- **Total population at risk:** 1,191 across 8 zones
+- **Shyaphru Bensi** (people_east node): 1,447 m, 18 m above river, 71 m from river, inside modeled RP10 footprint (quality-flagged), ~710 modeled residents
+- **Shyaphru** (people_west node): 1,464 m, 42 m above river, inside modeled RP10 footprint (quality-flagged), ~435 modeled residents
+- **Unnamed settlement** (food pad node): 1,497 m, 79 m above river, outside the footprints, ~105 modeled residents
 
 ### Integration with Relief Mode
 
@@ -2214,6 +2188,8 @@ Everything else—voice, physical dial, Tiger Data, helicopter, Seattle—comes 
 | **v2.2** | Adopted P2 snapshot fields `service_routes`, `Facility.site_id`, `GhostSuggestion.preview_edge_ids`; added `GET /scenario`, `/branch/*`; ghost shown only on request | Closes the v2.1 requests above | P4 | **Done** |
 | **v2.2** | Prevention risk circles and `/prevention/*` only apply to `nepal_rasuwa_v1` (their terrain node ids); other maps get no risk zones / HTTP 409. Prevention suggestions name real pads | Circles were stacked at board centre with invented counts on the HOT map | P4 (P3 owns prevention) | **Done; P3 to decide prevention on real maps** |
 | **v2.2** | UI board height follows scenario aspect (`GET /scenario.aspect_ratio`; HOT map is square) | HOT map was stretched into the A3 frame | P4 (P2 files) | **Done** |
+| **v2.3** | Prevention terrain/risk data for the real map from Copernicus GLO-30, WorldPop 2020, GloFAS and OSM (`build_risk_data.py`); schematic data relabelled illustrative; unsupported FEMA/WHO/DRR/census citations removed | Old values were invented and keyed to fictional nodes | P4 (P3 owns prevention) | **Done** |
+| **v2.3** | `backend/ai/gemini_adapter.py` moved to google-genai; numbers always computed in code, Gemini explains only; sanitized errors, timeout, LIVE/TEXT mode | Old adapter used deprecated SDK (never ran) and asked Gemini to invent probabilities, casualties and ROI | P4 (P3 file) | **Done** |
 | Open | Camera actions carry `board_uv` but no `site_id`; reducer rejects them (`invalid_site`) | Perception → site resolution missing | P3/P4 | TBD |
 | Open | Printer, projector, tripod, exact board dimensions, object print success | Hardware-driven calibration | P1+P3 | TBD |
 | Open | Selected AOI / actual HDX resource filenames / local mapped bridge site | Must be verified from downloaded geodata | P4 | TBD |

@@ -204,7 +204,7 @@ export function MapProjection({ scenario, snapshot, feedback = [], showBasemap, 
                     textAnchor="middle"
                     fill={zone.color}
                   >
-                    {zone.population_exposed} people
+                    ~{zone.population_exposed} residents (model est.)
                   </text>
                 )}
               </g>

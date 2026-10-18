@@ -526,15 +526,18 @@ _risk_data = None
 
 def _get_prevention():
     """Lazy load prevention planning module."""
-    global _prevention_module, _risk_data
+    global _prevention_module
     if _prevention_module is None:
         try:
             from backend.planning import prevention as prev_mod
             _prevention_module = prev_mod
-            _risk_data = prev_mod.load_risk_data()
         except ImportError:
             _prevention_module = False
-    return _prevention_module, _risk_data
+    if not _prevention_module:
+        return False, None
+    # Risk data belongs to the loaded scenario bundle (measured for the HOT map).
+    bundle = world_service.scenario() if world_service and hasattr(world_service, 'scenario') else None
+    return _prevention_module, _prevention_module.load_risk_data(bundle)
 
 
 @app.get("/prevention/risk-map")
@@ -547,11 +550,10 @@ async def get_risk_map():
         raise HTTPException(status_code=503, detail="World service not initialized")
 
     prevention, risk_data = _get_prevention()
-    if not prevention or not risk_data:
-        return {"available": False, "risk_zones": [], "message": "Prevention mode not configured"}
-    if hasattr(world_service, 'scenario') and not prevention.supports_bundle(world_service.scenario()):
+    if not prevention or not risk_data or (
+            hasattr(world_service, 'scenario') and not prevention.supports_bundle(world_service.scenario())):
         return {"available": False, "risk_zones": [],
-                "message": f"Prevention data is authored for nepal_rasuwa_v1, not {SCENARIO_ID}"}
+                "message": f"No prevention terrain data matches {SCENARIO_ID}"}
 
     # Get bundle (scenario data)
     if hasattr(world_service, 'scenario'):
@@ -566,7 +568,8 @@ async def get_risk_map():
     return {
         "available": True,
         "risk_zones": zones,
-        "scenarios": list(prevention.flood_scenarios().keys())
+        "scenarios": list(prevention.flood_scenarios(bundle).keys()),
+        "provenance": prevention.provenance(bundle),
     }
 
 
@@ -580,10 +583,10 @@ async def analyze_prevention(scenario: str = "category_2"):
         raise HTTPException(status_code=503, detail="World service not initialized")
 
     prevention, risk_data = _get_prevention()
-    if not prevention or not risk_data:
+    if not prevention:
         raise HTTPException(status_code=501, detail="Prevention mode not available")
-    if hasattr(world_service, 'scenario') and not prevention.supports_bundle(world_service.scenario()):
-        raise HTTPException(status_code=409, detail=f"Prevention data is authored for nepal_rasuwa_v1, not {SCENARIO_ID}")
+    if not risk_data or (hasattr(world_service, 'scenario') and not prevention.supports_bundle(world_service.scenario())):
+        raise HTTPException(status_code=409, detail=f"No prevention terrain data matches {SCENARIO_ID}")
 
     # Get bundle (scenario data) - handle both mock and real services
     if hasattr(world_service, 'scenario'):
@@ -625,10 +628,10 @@ async def get_prevention_suggestions(scenario: str = "category_2"):
         raise HTTPException(status_code=503, detail="World service not initialized")
 
     prevention, risk_data = _get_prevention()
-    if not prevention or not risk_data:
+    if not prevention:
         raise HTTPException(status_code=501, detail="Prevention mode not available")
-    if hasattr(world_service, 'scenario') and not prevention.supports_bundle(world_service.scenario()):
-        raise HTTPException(status_code=409, detail=f"Prevention data is authored for nepal_rasuwa_v1, not {SCENARIO_ID}")
+    if not risk_data or (hasattr(world_service, 'scenario') and not prevention.supports_bundle(world_service.scenario())):
+        raise HTTPException(status_code=409, detail=f"No prevention terrain data matches {SCENARIO_ID}")
 
     # Get bundle and state
     if hasattr(world_service, 'scenario'):
@@ -670,10 +673,10 @@ async def compare_prevention_outcomes(scenario: str = "default"):
         raise HTTPException(status_code=503, detail="World service not initialized")
 
     prevention, risk_data = _get_prevention()
-    if not prevention or not risk_data:
+    if not prevention:
         raise HTTPException(status_code=501, detail="Prevention mode not available")
-    if hasattr(world_service, 'scenario') and not prevention.supports_bundle(world_service.scenario()):
-        raise HTTPException(status_code=409, detail=f"Prevention data is authored for nepal_rasuwa_v1, not {SCENARIO_ID}")
+    if not risk_data or (hasattr(world_service, 'scenario') and not prevention.supports_bundle(world_service.scenario())):
+        raise HTTPException(status_code=409, detail=f"No prevention terrain data matches {SCENARIO_ID}")
 
     # Get bundle and state
     if hasattr(world_service, 'scenario'):
@@ -691,18 +694,10 @@ async def compare_prevention_outcomes(scenario: str = "default"):
 
     comparison = prevention.compare_outcomes(bundle, state, risk_data, scenario)
 
-    # Add Gemini analysis if available
-    try:
-        from backend.ai.gemini_adapter import get_gemini
-        gemini = get_gemini()
-        if gemini.is_ready:
-            ai_analysis = gemini.compare_outcomes(
-                comparison['without_prevention'],
-                comparison['with_prevention'],
-                comparison.get('prevention_investment', 0)
-            )
-            comparison['ai_analysis'] = ai_analysis
-    except Exception:
-        pass
+    # Numbers come from the model above; Gemini (if configured) only explains them.
+    from backend.ai.gemini_adapter import get_gemini
+    comparison['ai_analysis'] = await asyncio.to_thread(
+        get_gemini().compare_outcomes, comparison['without_prevention'],
+        comparison['with_prevention'], comparison.get('prevention_investment', 0))
 
     return comparison
