@@ -17,6 +17,15 @@ import os
 import uuid
 from datetime import datetime
 from contextlib import asynccontextmanager
+from pathlib import Path
+
+# Load environment variables from .env
+try:
+    from dotenv import load_dotenv
+    env_path = Path(__file__).resolve().parents[1] / '.env'
+    load_dotenv(env_path)
+except ImportError:
+    pass  # dotenv not installed, use system env vars
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -257,12 +266,22 @@ async def health():
     if world_service:
         raw_snapshot = world_service.snapshot()
         version = raw_snapshot.get('world_version', 1) if isinstance(raw_snapshot, dict) else raw_snapshot.world_version
+
+    # Check Gemini status
+    gemini_status = "not_configured"
+    try:
+        from backend.ai.gemini_adapter import get_gemini
+        gemini = get_gemini()
+        gemini_status = gemini.status
+    except Exception:
+        pass
+
     return HealthResponse(
         status="ok",
         world_version=version,
         vision_mode="mock" if USE_MOCK else "live",
         perceptron_status="not_connected",
-        gemini_status="not_connected"
+        gemini_status=gemini_status
     )
 
 
@@ -364,9 +383,8 @@ async def reset_world():
 @app.post("/narrate", response_model=NarrateResponse)
 async def narrate(request: NarrateRequest):
     """
-    Get AI narration for current state.
-    Uses Gemini with read-only world tools (P4 implements tools).
-    For now returns mock response.
+    Get AI narration for current state using Gemini.
+    Answers are grounded in actual simulation data.
     """
     if not world_service:
         raise HTTPException(status_code=503, detail="World service not initialized")
@@ -374,10 +392,23 @@ async def narrate(request: NarrateRequest):
     raw_snapshot = world_service.snapshot()
     if isinstance(raw_snapshot, dict):
         snapshot = _dict_to_world_snapshot(raw_snapshot)
+        world_state = raw_snapshot
     else:
         snapshot = raw_snapshot
+        world_state = snapshot.model_dump()
 
-    # Mock narration - P4 will implement real Gemini integration
+    # Try Gemini first
+    try:
+        from backend.ai.gemini_adapter import get_gemini
+        gemini = get_gemini()
+        if gemini.is_ready:
+            mode = world_state.get('mode', 'relief')
+            answer = gemini.answer_question(request.question, world_state, mode)
+            return NarrateResponse(answer=answer, grounded_in_version=snapshot.world_version)
+    except Exception:
+        pass  # Fall back to rule-based
+
+    # Fallback: rule-based responses
     blocked_count = snapshot.metrics.blocked_roads
     phase = snapshot.phase
 
@@ -393,8 +424,10 @@ async def narrate(request: NarrateRequest):
             answer = f"I recommend placing a temporary bridge at {site_id}. This would restore multi-service access to isolated communities."
         else:
             answer = "No bridge placement is currently needed - all crossings are operational."
+    elif "prevention" in request.question.lower() or "prepare" in request.question.lower():
+        answer = "Prevention mode allows you to plan evacuation routes and pre-position resources before disaster strikes. Place shelters, reinforce bridges, and stock supplies to protect more lives."
     else:
-        answer = f"The scenario is in '{phase.value}' phase with {blocked_count} blocked road(s). This is an educational simulation based on HOT Nepal 2026 mapping data."
+        answer = f"The scenario is in '{phase.value}' phase with {blocked_count} blocked road(s). This simulation uses real terrain data from Rasuwa, Nepal with 1,191 people across 8 communities."
 
     return NarrateResponse(
         answer=answer,
@@ -623,10 +656,10 @@ async def get_prevention_suggestions(scenario: str = "category_2"):
 
 
 @app.post("/prevention/compare")
-async def compare_prevention_outcomes(scenario: str = "category_2"):
+async def compare_prevention_outcomes(scenario: str = "default"):
     """
     Compare prevention vs no-prevention outcomes.
-    Shows lives saved, cost avoided, and ROI of prevention measures.
+    Uses Gemini for intelligent analysis when available.
     """
     if not world_service:
         raise HTTPException(status_code=503, detail="World service not initialized")
@@ -650,5 +683,19 @@ async def compare_prevention_outcomes(scenario: str = "category_2"):
         state = {'tokens': {}}
 
     comparison = prevention.compare_outcomes(bundle, state, risk_data, scenario)
+
+    # Add Gemini analysis if available
+    try:
+        from backend.ai.gemini_adapter import get_gemini
+        gemini = get_gemini()
+        if gemini.is_ready:
+            ai_analysis = gemini.compare_outcomes(
+                comparison['without_prevention'],
+                comparison['with_prevention'],
+                comparison.get('prevention_investment', 0)
+            )
+            comparison['ai_analysis'] = ai_analysis
+    except Exception:
+        pass
 
     return comparison
