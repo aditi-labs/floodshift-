@@ -63,6 +63,20 @@ is `manual`; recorded replay is `replay`. Physical/replay placements require
 P3 should broadcast the returned snapshot after accepted mutations. The service
 serializes commits with a lock, but gateway broadcast ordering is P3's responsibility.
 
+## UI-facing additions (v2.2)
+
+- The API server loads `scenarios/nepal_rasuwa_hot_v1` (override `FLOODSHIFT_SCENARIO`;
+  durable session with `FLOODSHIFT_SESSION=/path/outside/repo/session.sqlite3`).
+- `ghost_suggestion` is `None` until `request_suggestion(goal)` (POST `/plan/suggest`)
+  records a versioned `suggest` event; placing a bridge or reset clears it. `suggest()`
+  stays read-only. Suggestions include `preview_edge_ids` (restored route via the crossing).
+- `save_branch(name)` / `load_branch(name)` are immutable bookmarks (logged actions, so they
+  survive session replay); `compare([a, b])` prefers bookmarks and lists placed pieces.
+- Snapshots add `service_routes` (nearest reachable service per need; when cut, the path
+  that would work with closures open) and per-node `unmet_food|medical|refuge`.
+- `scenario_geometry()` serves `GET /scenario`: roads (ids = edge ids), sites with labels
+  and tolerances, rivers, settlement labels, flood footprints, `aspect_ratio`.
+
 ## Person 2 integration
 
 Use `contracts/fixture_world.json` and `data/fixture_after_bridge.json` to show before/

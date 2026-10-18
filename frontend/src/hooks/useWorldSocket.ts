@@ -3,6 +3,7 @@ import type { ActionResult, Envelope, ObjectObservation, TokenType, UV, WorldAct
 import type { ScenarioGeometry } from "../types/scenario";
 import { createLiveTransport } from "../lib/liveTransport";
 import { createMockTransport } from "../mocks/mockTransport";
+import { setBoardAspect } from "../types/geometry";
 import { newActionId, nowUtc, type ConnectionStatus, type WorldTransport } from "../lib/transport";
 
 export const USE_MOCKS = String(import.meta.env.VITE_USE_MOCKS ?? "true") !== "false";
@@ -53,8 +54,13 @@ export function useWorldSocket() {
   }, []);
 
   useEffect(() => {
-    t.getScenario().then(setScenario);
+    t.getScenario().then((s) => {
+      setBoardAspect(s.aspect_ratio);
+      setScenario(s);
+    });
     const onEnvelope = (e: Envelope) => {
+      // A new connection (possibly to a restarted server) restarts the sequence.
+      if (e.type === "server.hello") lastSeq.current = -Infinity;
       if (typeof e.seq === "number" && e.seq > 0 && e.seq <= lastSeq.current) return;
       if (typeof e.seq === "number" && e.seq > 0) lastSeq.current = e.seq;
       switch (e.type) {
@@ -125,14 +131,15 @@ export function useWorldSocket() {
 
   const placeToken = useCallback(
     (token_type: TokenType, site_id: string, board_uv: UV, token_id?: string) =>
-      send({ type: "place_token", token_type, site_id, board_uv, token_id: token_id ?? `manual-${token_type}` }),
+      // One id per pad: two people on two pads are two tokens, not a repeat of one.
+      send({ type: "place_token", token_type, site_id, board_uv, token_id: token_id ?? `manual-${token_type}-${site_id}` }),
     [send],
   );
 
   const reset = useCallback(() => send({ type: "reset" }), [send]);
 
   const suggest = useCallback(
-    async (goalId = "people_east") => {
+    async (goalId = "needs_served") => {
       try {
         const r = await t.suggest(goalId, snapRef.current?.world_version ?? 0);
         return handleResult(r, "suggest bridge");
@@ -202,6 +209,19 @@ const REASONS: Record<string, string> = {
   no_suggestion: "NO BRIDGE NEEDED",
   no_supply_route: "NO SUPPLY ROUTE",
   site_in_hazard: "SITE IN HAZARD ZONE",
+  // Codes emitted by backend/world/rules.py and service.py
+  outside_site: "PLACE INSIDE THE PAD",
+  site_occupied: "PAD ALREADY USED",
+  site_exposed: "SITE IN HAZARD ZONE",
+  site_in_flood_footprint: "SITE IN FLOOD ZONE",
+  site_not_approved: "SITE NOT APPROVED",
+  insufficient_budget: "NOT ENOUGH BUDGET",
+  crossing_already_open: "CROSSING ALREADY OPEN",
+  flood_closure_not_restorable: "FLOODED — BRIDGE CAN'T HELP",
+  token_already_placed: "PIECE ALREADY PLACED",
+  too_far_from_mapped_road: "PLACE ON A ROAD",
+  unknown_branch: "NO SAVED BRANCH",
+  last_stage: "LAST STAGE",
 };
 
 export function reasonText(reason?: string | null): string {

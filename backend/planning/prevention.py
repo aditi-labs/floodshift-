@@ -42,6 +42,33 @@ def _load_data(bundle_path: Path | None = None) -> tuple[dict, dict]:
     return _terrain_data, _risk_data
 
 
+def supports_bundle(bundle: dict) -> bool:
+    """Terrain/risk data is keyed by nepal_rasuwa_v1 node ids and drawn at their UVs.
+
+    Applying it to another map (e.g. the HOT-derived bundle) would stack every zone at
+    the board centre and attach invented population counts to the wrong places.
+    """
+    nodes = {n.get('id') for n in bundle.get('roads', {}).get('nodes', [])}
+    if not nodes:
+        return True  # no geometry to contradict (mock world)
+    terrain, _ = _load_data()
+    return set(terrain.get('node_terrain', {})) <= nodes
+
+
+def flood_scenarios() -> dict:
+    terrain, _ = _load_data()
+    return terrain.get('flood_scenarios', {})
+
+
+def _real_site(bundle: dict, kind: str, near_uv: list[float]) -> tuple[str, list[float]] | None:
+    """Nearest approved site of ``kind`` so suggestions name pads the reducer accepts."""
+    candidates = [s for s in bundle.get('sites', []) if s.get('kind') == kind]
+    if not candidates:
+        return None
+    site = min(candidates, key=lambda s: (s['board_uv'][0]-near_uv[0])**2 + (s['board_uv'][1]-near_uv[1])**2)
+    return site['id'], list(site['board_uv'])
+
+
 def load_risk_data(bundle_path: Path | None = None) -> dict:
     """Load risk data (backward compatible)."""
     _, risk_data = _load_data(bundle_path)
@@ -358,6 +385,8 @@ def get_risk_zones_for_snapshot(bundle: dict, state: dict, mode: str = 'relief')
     Works in both prevention and relief modes.
     """
     terrain, risk_data = _load_data()
+    if not supports_bundle(bundle):
+        return []
 
     # Get base zones
     base_zones = get_risk_zones(bundle, risk_data)
@@ -688,6 +717,14 @@ def best_prevention_suggestion(
 
     if not candidates:
         return None
+
+    # Point each suggestion at a real approved pad when the bundle has one.
+    kinds = {'shelter': 'shelter_site', 'bridge': 'bridge_crossing',
+             'hospital': 'medical_site', 'food_shelter': 'food_site'}
+    for candidate in candidates:
+        real = _real_site(bundle, kinds[candidate['token_type']], candidate['board_uv'])
+        if real:
+            candidate['site_id'], candidate['board_uv'] = real
 
     # Return highest priority (most impactful)
     return min(candidates, key=lambda c: c['priority'])

@@ -17,6 +17,8 @@ export interface SiteGeometry {
   kind: SiteKind;
   label: string;
   board_uv: UV;
+  /** Placement radius the reducer accepts around board_uv. */
+  tolerance_uv?: number;
   /** For bridge_crossing: span angle in degrees for the ghost silhouette. */
   rotation_deg?: number;
 }
@@ -25,6 +27,10 @@ export interface ScenarioGeometry {
   scenario_id: string;
   name: string;
   data_label: "HOT_DERIVED" | "SCHEMATIC";
+  /** Physical board width / height. HOT bundles are square (1.0); the schematic is A3 (≈1.414). */
+  aspect_ratio?: number;
+  board?: { width_mm?: number; height_mm?: number; control_inset_uv?: [number, number, number, number] };
+  provenance_label?: string;
   rivers: UV[][];
   hazard_zones: { id: string; stage: number; polygon: UV[] }[];
   roads: RoadGeometry[];

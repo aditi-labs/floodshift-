@@ -107,6 +107,11 @@ class WorldAction(BaseModel):
     board_uv: tuple[float, float] | None = None
     expected_world_version: int
     timestamp_utc: datetime = Field(default_factory=datetime.utcnow)
+    # Optional fields used by suggest / branch / compare actions (P4 reducer).
+    goal: str | None = None
+    branch_id: str | None = None
+    from_snapshot_id: str | None = None
+    branches: list[str] | None = None
 
 
 class ActionResult(BaseModel):
@@ -129,6 +134,8 @@ class TokenState(BaseModel):
     site_id: str | None = None
     vision_source: VisionSource
     status: Literal["accepted", "pending", "rejected"]
+    rotation_deg: float | None = None
+    road_snap: dict | None = None  # reasoning bundle: snapped mapped-road position
 
 
 class FacilityState(BaseModel):
@@ -137,7 +144,10 @@ class FacilityState(BaseModel):
     type: TokenType
     capacity_model: int
     used_capacity_model: int
-    reachable: bool
+    reachable: bool  # supply route from the depot exists
+    site_id: str | None = None
+    node_id: str | None = None
+    active: bool = True  # false: food station without supply, or site inside flood footprint
 
 
 class PopulationDemand(BaseModel):
@@ -148,6 +158,13 @@ class PopulationDemand(BaseModel):
     need_food: int
     need_medical: int
     need_refuge: int
+    # Capacity-bounded unmet units for THIS population node (metrics hold the totals).
+    unmet_food: int | None = None
+    unmet_medical: int | None = None
+    unmet_refuge: int | None = None
+    token_id: str | None = None
+    node_id: str | None = None
+    headcount_known: bool | None = None
 
 
 class EdgeState(BaseModel):
@@ -166,6 +183,9 @@ class WorldMetrics(BaseModel):
     unmet_medical_model: int = 0
     unmet_refuge_model: int = 0
     blocked_roads: int = 0
+    resource_spent: int = 0
+    reachable_communities: int = 0
+    road_access_fraction: float = 0.0
 
 
 class GhostSuggestion(BaseModel):
@@ -174,6 +194,20 @@ class GhostSuggestion(BaseModel):
     site_id: str
     board_uv: tuple[float, float]
     reason_code: str
+    rotation_deg: float | None = None
+    gain_model: int | None = None
+    resource_cost: int | None = None
+    preview_edge_ids: list[str] | None = None
+    projected_metrics: WorldMetrics | None = None
+
+
+class ServiceRoute(BaseModel):
+    """Computed access path from a population node to its nearest service of one kind."""
+    population_id: str
+    service: Literal["medical", "food", "refuge"]
+    facility_id: str | None = None
+    reachable: bool
+    edge_ids: list[str]  # if unreachable: the path that WOULD work with closures open
 
 
 class NarrationEvent(BaseModel):
@@ -204,6 +238,12 @@ class WorldSnapshot(BaseModel):
     ghost_suggestion: GhostSuggestion | None = None
     narration_event: NarrationEvent | None = None
     provenance_label: str = "Historical map data; intervention outcomes are illustrative"
+
+    snapshot_id: str | None = None
+    data_mode: Literal["HOT_DERIVED", "SCHEMATIC"] | None = None
+    budget_remaining_model: int | None = None
+    service_routes: list[ServiceRoute] = []
+    routing_decision: dict | None = None  # reasoning bundle only: group evacuation plan
 
     # Prevention mode fields
     mode: Literal["prevention", "relief"] = "relief"
@@ -312,6 +352,8 @@ class NarrateRequest(BaseModel):
 class NarrateResponse(BaseModel):
     answer: str
     grounded_in_version: int
+    mode: Literal["LIVE", "TEXT"] = "TEXT"  # LIVE only when Gemini actually answered
+    reason: str | None = None  # why TEXT fallback was used
 
 
 # =============================================================================

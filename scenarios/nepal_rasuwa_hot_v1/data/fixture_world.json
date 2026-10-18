@@ -1,7 +1,7 @@
 {
   "schema_version": 2,
-  "world_version": 5,
-  "snapshot_id": "snap-5",
+  "world_version": 6,
+  "snapshot_id": "snap-6",
   "scenario_id": "nepal_rasuwa_hot_v1",
   "phase": "disaster_active",
   "simulation_stage": 1,
@@ -16,7 +16,7 @@
   },
   "budget_remaining_model": 2,
   "narration_event": {
-    "event_type": "shelter_placed",
+    "event_type": "bridge_suggested",
     "model_only": true
   },
   "tokens": [
@@ -2770,10 +2770,66 @@
       "need_refuge": 8,
       "id": "people_east",
       "token_id": "person",
-      "node_id": "337292.463:3116549.174"
+      "node_id": "337292.463:3116549.174",
+      "unmet_medical": 2,
+      "unmet_food": 8,
+      "unmet_refuge": 8
     }
   ],
   "routes": [],
+  "service_routes": [
+    {
+      "population_id": "people_east",
+      "service": "medical",
+      "facility_id": "hospital",
+      "reachable": false,
+      "edge_ids": [
+        "road-89c140a04a3b",
+        "road-d7db1525eb16",
+        "crossing_east_road",
+        "road-eb4c2e2311b1",
+        "road-b57bfe6201ae",
+        "road-5cd324e743fa",
+        "road-1991820fb31f",
+        "road-68d012ef075d",
+        "road-e330a4e786e8",
+        "road-7cae6a171bef"
+      ]
+    },
+    {
+      "population_id": "people_east",
+      "service": "food",
+      "facility_id": "food_shelter",
+      "reachable": false,
+      "edge_ids": [
+        "road-89c140a04a3b",
+        "road-d7db1525eb16",
+        "crossing_east_road",
+        "road-eb4c2e2311b1",
+        "road-b57bfe6201ae",
+        "road-5cd324e743fa",
+        "road-1991820fb31f",
+        "road-68d012ef075d"
+      ]
+    },
+    {
+      "population_id": "people_east",
+      "service": "refuge",
+      "facility_id": "shelter",
+      "reachable": false,
+      "edge_ids": [
+        "road-89c140a04a3b",
+        "road-d7db1525eb16",
+        "crossing_east_road",
+        "road-eb4c2e2311b1",
+        "road-b57bfe6201ae",
+        "road-5cd324e743fa",
+        "road-1991820fb31f",
+        "road-68d012ef075d",
+        "road-e330a4e786e8"
+      ]
+    }
+  ],
   "metrics": {
     "blocked_roads": 3,
     "resource_spent": 3,
@@ -2796,6 +2852,18 @@
     "rotation_deg": -150.16086397824495,
     "reason_code": "improves_multi_service_access",
     "gain_model": 18,
+    "preview_edge_ids": [
+      "road-89c140a04a3b",
+      "road-d7db1525eb16",
+      "crossing_east_road",
+      "road-eb4c2e2311b1",
+      "road-b57bfe6201ae",
+      "road-5cd324e743fa",
+      "road-1991820fb31f",
+      "road-68d012ef075d",
+      "road-e330a4e786e8",
+      "road-7cae6a171bef"
+    ],
     "resource_cost": 2,
     "score": 178,
     "projected_metrics": {

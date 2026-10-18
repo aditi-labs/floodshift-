@@ -35,7 +35,7 @@ export type SiteKind =
   | "control_start_pad"
   | "population_node";
 
-export type Phase = "ready" | "disaster_active";
+export type Phase = "prevention" | "ready" | "disaster_active";
 
 export type UV = [number, number];
 
@@ -50,7 +50,7 @@ export interface PlacedToken {
   site_id?: string | null;
   vision_source: VisionSource;
   status: TokenStatus;
-  rotation_deg?: number;
+  rotation_deg?: number | null;
 }
 
 /** backend FacilityState */
@@ -59,9 +59,13 @@ export interface Facility {
   type: TokenType;
   capacity_model: number;
   used_capacity_model: number;
+  /** A supply route from the depot exists. */
   reachable: boolean;
-  /** PROPOSED (P2): which site the facility sits on, for icon placement. */
-  site_id?: string;
+  /** Which site the facility sits on, for icon placement. */
+  site_id?: string | null;
+  node_id?: string | null;
+  /** false: food station without supply, or site inside a flood footprint. */
+  active?: boolean;
 }
 
 export interface PopulationDemand {
@@ -71,6 +75,13 @@ export interface PopulationDemand {
   need_food: number;
   need_medical: number;
   need_refuge: number;
+  /** Capacity-bounded unmet units for this node (metrics hold the totals). */
+  unmet_food?: number | null;
+  unmet_medical?: number | null;
+  unmet_refuge?: number | null;
+  token_id?: string | null;
+  /** Reasoning bundle: false means people/need fields are placeholders, not zeros. */
+  headcount_known?: boolean | null;
 }
 
 export interface EdgeState {
@@ -88,6 +99,9 @@ export interface Metrics {
   unmet_medical_model: number;
   unmet_refuge_model: number;
   blocked_roads: number;
+  resource_spent?: number;
+  reachable_communities?: number;
+  road_access_fraction?: number;
 }
 
 export interface GhostSuggestion {
@@ -95,8 +109,11 @@ export interface GhostSuggestion {
   site_id: string;
   board_uv: UV;
   reason_code: string;
-  /** PROPOSED (P2): edge ids of the preview route to draw as a cyan dashed line. */
-  preview_edge_ids?: string[];
+  rotation_deg?: number | null;
+  gain_model?: number | null;
+  resource_cost?: number | null;
+  /** Edge ids of the restored route through this crossing (cyan dashed preview). */
+  preview_edge_ids?: string[] | null;
 }
 
 export interface NarrationEvent {
@@ -106,7 +123,8 @@ export interface NarrationEvent {
 
 export type ServiceKind = "medical" | "food" | "refuge";
 
-/** PROPOSED (P2): backend-computed service route, so React never runs routing. */
+/** Backend-computed service route, so React never runs routing. If unreachable,
+ *  edge_ids is the path that would work with closures open (drawn as cut). */
 export interface ServiceRoute {
   population_id: string;
   service: ServiceKind;
@@ -148,8 +166,12 @@ export interface WorldSnapshot {
   ghost_suggestion?: GhostSuggestion | null;
   narration_event?: NarrationEvent | null;
   provenance_label: string;
-  /** PROPOSED (P2) */
+  snapshot_id?: string | null;
+  data_mode?: "HOT_DERIVED" | "SCHEMATIC" | null;
+  budget_remaining_model?: number | null;
   service_routes?: ServiceRoute[];
+  /** Reasoning bundle only: fractional group evacuation plan (see backend/planning/population_routes.py). */
+  routing_decision?: Record<string, unknown> | null;
   /** Risk zones with colors that adapt as tokens provide protection */
   risk_zones?: RiskZone[];
   mode?: "prevention" | "relief";
@@ -177,6 +199,10 @@ export interface WorldAction {
   board_uv?: UV | null;
   expected_world_version: number;
   timestamp_utc?: string;
+  goal?: string | null;
+  branch_id?: string | null;
+  from_snapshot_id?: string | null;
+  branches?: string[] | null;
 }
 
 /** Response of POST /action. Rejections are rendered, never computed, by the UI. */
@@ -192,12 +218,16 @@ export interface SuggestResponse {
   has_suggestion: boolean;
   suggestion: GhostSuggestion | null;
   world_version: number;
+  rejection_reason?: string | null;
 }
 
 /** Response of POST /narrate. */
 export interface NarrateResponse {
   answer: string;
   grounded_in_version: number;
+  /** LIVE only when Gemini actually answered; TEXT is the state-derived fallback. */
+  mode?: "LIVE" | "TEXT";
+  reason?: string | null;
 }
 
 export interface HealthResponse {
@@ -226,7 +256,7 @@ export interface ObjectObservation {
 }
 
 export interface BranchComparison {
-  baseline_snapshot_id: string;
+  baseline_snapshot_id: string | null;
   branches: Array<{ id: string; action: string; [metric: string]: number | string }>;
   metric_provenance: string;
 }

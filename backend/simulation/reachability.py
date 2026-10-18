@@ -1,5 +1,5 @@
 """Allocate each independent need once, with stable nearest-service ordering."""
-from backend.simulation.routing import route_minutes, route_geometry
+from backend.simulation.routing import route_minutes, route_geometry, route_edge_ids
 from backend.simulation.population_positions import split_at_groups
 
 NEEDS = {'hospital': ('medical', 'medical'), 'food_shelter': ('food', 'food'),
@@ -47,6 +47,8 @@ def measure(bundle, state):
     people.sort(key=lambda p: p['id'])
     metrics = {'blocked_roads': sum(e['blocked'] for e in edges),
                'resource_spent': bundle['budget_model'] - state['budget_remaining_model']}
+    service_routes = []
+    open_edges = [dict(e, blocked=False) for e in edges]
     for kind, (need, access) in NEEDS.items():
         metrics['unmet_' + need + '_model'] = 0
         metrics['people_reachable_for_' + access] = 0
@@ -61,6 +63,23 @@ def measure(bundle, state):
                     candidates.append((result['estimated_model_minutes'], facility['id'], facility, result))
             if candidates:
                 metrics['people_reachable_for_' + access] += person['people_model']
+                _, _, nearest, result = min(candidates)
+                service_routes.append({'population_id': person['id'], 'service': need,
+                    'facility_id': nearest['id'], 'reachable': True,
+                    'edge_ids': route_edge_ids(edges, result['path'])})
+            else:
+                # Show where access breaks: the cheapest route if every closure were open.
+                blocked_options = []
+                for facility in facilities:
+                    if facility['type'] == kind and facility['active']:
+                        result = route_minutes(open_edges, person['node_id'], facility['node_id'], nodes)
+                        if result['reachable']:
+                            blocked_options.append((result['estimated_model_minutes'], facility['id'], result))
+                if blocked_options:
+                    _, facility_id, result = min(blocked_options)
+                    service_routes.append({'population_id': person['id'], 'service': need,
+                        'facility_id': facility_id, 'reachable': False,
+                        'edge_ids': route_edge_ids(open_edges, result['path'])})
             for _, _, facility, result in sorted(candidates):
                 amount = min(remaining, facility['capacity_model'] - facility['used_capacity_model'])
                 if amount <= 0:
@@ -71,10 +90,11 @@ def measure(bundle, state):
                                     'need': need, 'units_model': amount, **result,
                                     'board_uv': route_geometry(edges, result['path'], nodes)})
             metrics['unmet_' + need + '_model'] += remaining
+            person['unmet_' + need] = remaining
     metrics['reachable_communities'] = sum(route(bundle['depot_node'], p['node_id'])['reachable'] for p in people)
     metrics['road_access_fraction'] = sum(not e['blocked'] for e in edges) / len(edges) if edges else 0
     result = {'edges': edges, 'facilities': facilities, 'population_demand': people,
-              'routes': allocations, 'metrics': metrics}
+              'routes': allocations, 'service_routes': service_routes, 'metrics': metrics}
     if 'routing_policy' in bundle:
         result['routing_nodes'] = list(nodes.values())
         result['population_unit'] = 'unspecified_population_group_no_headcount'

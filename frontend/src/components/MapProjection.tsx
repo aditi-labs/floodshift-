@@ -294,7 +294,7 @@ export function MapProjection({ scenario, snapshot, feedback = [], showBasemap, 
                   </text>
                 </g>
               )}
-              {demand && <NeedBars demand={demand} metrics={snapshot.metrics} fs={fs} />}
+              {demand && demand.headcount_known !== false && <NeedBars demand={demand} metrics={snapshot.metrics} fs={fs} />}
             </g>
           );
         })}
@@ -338,10 +338,11 @@ export function MapProjection({ scenario, snapshot, feedback = [], showBasemap, 
 
 function NeedBars({ demand, metrics, fs }: { demand: WorldSnapshot["population_demand"][number]; metrics: WorldSnapshot["metrics"]; fs: number }) {
   // Needs are read straight from the snapshot; bars show unmet / total for this node.
+  // Per-node unmet comes from the backend; global metrics are only a fallback.
   const rows = [
-    { k: "FOOD", need: demand.need_food, unmet: metrics.unmet_food_model, c: "var(--c-food)" },
-    { k: "CARE", need: demand.need_medical, unmet: metrics.unmet_medical_model, c: "var(--c-medical)" },
-    { k: "REFUGE", need: demand.need_refuge, unmet: metrics.unmet_refuge_model, c: "var(--c-refuge)" },
+    { k: "FOOD", need: demand.need_food, unmet: demand.unmet_food ?? metrics.unmet_food_model, c: "var(--c-food)" },
+    { k: "CARE", need: demand.need_medical, unmet: demand.unmet_medical ?? metrics.unmet_medical_model, c: "var(--c-medical)" },
+    { k: "REFUGE", need: demand.need_refuge, unmet: demand.unmet_refuge ?? metrics.unmet_refuge_model, c: "var(--c-refuge)" },
   ];
   const w = 70;
   return (

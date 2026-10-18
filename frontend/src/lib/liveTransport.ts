@@ -104,7 +104,7 @@ export function createLiveTransport(baseUrl: string): WorldTransport {
         action_id: newActionId("suggest"),
         accepted: r.has_suggestion,
         world_version: r.world_version,
-        rejection_reason: r.has_suggestion ? null : "no_suggestion",
+        rejection_reason: r.has_suggestion ? null : (r.rejection_reason ?? "no_suggestion"),
       };
     },
 
@@ -113,7 +113,8 @@ export function createLiveTransport(baseUrl: string): WorldTransport {
     compare: (a, b) => fetch(`${http}/branch/compare?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}`).then(json<BranchComparison>),
     narrate: async (question) => {
       const r = await post<NarrateResponse>("/narrate", { question });
-      return { text: r.answer, source: "gemini" as const };
+      // Never label the state-derived fallback as a live Gemini answer.
+      return { text: r.answer, source: r.mode === "LIVE" ? ("gemini" as const) : ("template" as const) };
     },
   };
 }

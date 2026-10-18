@@ -12,10 +12,10 @@ DATA = ROOT / 'scenarios/nepal_rasuwa_v1/data'
 def test_published_fixtures_are_reproducible_from_actions():
     service = WorldService()
     actions = json.loads((DATA / 'demo_actions.json').read_text())
-    for action in actions[:5]:
+    for action in actions[:6]:  # five pieces, then the suggest request
         assert service.apply(action)['accepted']
     assert service.snapshot() == json.loads((ROOT / 'contracts/fixture_world.json').read_text())
-    assert service.apply(actions[5])['accepted']
+    assert service.apply(actions[6])['accepted']
     assert service.snapshot() == json.loads((DATA / 'fixture_after_bridge.json').read_text())
 
 

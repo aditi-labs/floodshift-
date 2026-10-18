@@ -24,6 +24,22 @@ def route_minutes(edges, source, target, nodes=()):
         return {'reachable': False, 'path': [], 'estimated_model_minutes': None}
 
 
+def _cheapest_edge(edges, source, target):
+    candidates = [e for e in edges if not e['blocked'] and {e['from'], e['to']} == {source, target}]
+    return min(candidates, key=lambda e: float(e['weight_min']))
+
+
+def route_edge_ids(edges, path):
+    """Mapped edge IDs along a node path; split parts report their parent road once."""
+    ids = []
+    for source, target in zip(path, path[1:]):
+        edge = _cheapest_edge(edges, source, target)
+        identity = edge.get('parent_edge_id', edge['id'])
+        if not ids or ids[-1] != identity:
+            ids.append(identity)
+    return ids
+
+
 def route_geometry(edges, path, nodes):
     """Expand a node path along the same cheapest usable edges as usable_graph.
 
@@ -34,9 +50,7 @@ def route_geometry(edges, path, nodes):
         return []
     geometry = []
     for source, target in zip(path, path[1:]):
-        candidates = [e for e in edges if not e['blocked'] and
-                      {e['from'], e['to']} == {source, target}]
-        edge = min(candidates, key=lambda e: float(e['weight_min']))
+        edge = _cheapest_edge(edges, source, target)
         points = edge.get('board_uv', [nodes[edge['from']]['board_uv'], nodes[edge['to']]['board_uv']])
         points = points if edge['from'] == source else list(reversed(points))
         geometry.extend(points if not geometry else points[1:])
