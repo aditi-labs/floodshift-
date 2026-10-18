@@ -5,6 +5,7 @@ from math import dist
 from backend.simulation.reachability import measure
 from backend.simulation.routing import route_minutes
 from backend.world.scenarios import valid_uv
+from backend.simulation.population_positions import snap_to_road
 
 ALLOWED = {'disaster_start': 'control_start_pad', 'person': 'population_node',
            'hospital': 'medical_site', 'food_shelter': 'food_site',
@@ -50,7 +51,7 @@ def reduce_action(bundle, original, action):
         require(old is not None, 'unknown_token')
         require(old['type'] != 'disaster_start', 'start_is_latched')
         require(action.get('token_type', old['type']) == old['type'], 'token_type_mismatch')
-        old_site = next(s for s in bundle['sites'] if s['id'] == old['site_id'])
+        old_site = next((s for s in bundle['sites'] if s['id'] == old['site_id']), {'resource_cost': 0})
         del state['tokens'][token_id]
         state['token_inventory'][old['type']] += 1
         # P0 sandbox: moving/removing returns the model deployment cost.
@@ -63,6 +64,14 @@ def reduce_action(bundle, original, action):
     token_type = action.get('token_type', old['type'] if old else None)
     require(isinstance(token_type, str) and token_type in ALLOWED, 'unsupported_token')
     site = next((s for s in bundle['sites'] if s['id'] == action.get('site_id')), None)
+    road_snap = None
+    if token_type == 'person' and 'routing_policy' in bundle:
+        require(valid_uv(action.get('board_uv')), 'invalid_board_uv')
+        road_snap = snap_to_road(bundle, action['board_uv'])
+        require(road_snap is not None, 'too_far_from_mapped_road')
+        site = {'id': 'population:' + token_id, 'kind': 'population_node',
+                'board_uv': road_snap['board_uv'], 'tolerance_uv': bundle['routing_policy']['snap_tolerance_uv'],
+                'approved': True, 'resource_cost': 0}
     require(site is not None and site['kind'] == ALLOWED[token_type], 'invalid_site')
     require(valid_uv(action.get('board_uv')), 'invalid_board_uv')
     require(dist(action['board_uv'], site['board_uv']) <= site['tolerance_uv'], 'outside_site')
@@ -74,19 +83,23 @@ def reduce_action(bundle, original, action):
     require(not any(t['site_id'] == site['id'] for t in state['tokens'].values()), 'site_occupied')
     if token_type in {'hospital', 'food_shelter', 'shelter'}:
         require(not site.get('hazard_exposed', False), 'site_exposed')
+        require(site['id'] not in bundle['hazard'].get('site_stages', [[]]*len(bundle['hazard']['stages']))[state['simulation_stage']], 'site_in_flood_footprint')
     require(state['token_inventory'].get(token_type, 0) > 0, 'resource_exhausted')
     require(state['budget_remaining_model'] >= site['resource_cost'], 'insufficient_budget')
     measured = measure(bundle, state)
     if token_type == 'food_shelter':
         require(route_minutes(measured['edges'], bundle['depot_node'], site['node_id'])['reachable'], 'no_supply_route')
     if token_type == 'bridge':
-        require(any(e['id'] == site['edge_id'] and e['blocked'] for e in measured['edges']), 'crossing_already_open')
+        require(site['edge_id'] not in bundle['hazard'].get('non_restorable_stages', [[]]*len(bundle['hazard']['stages']))[state['simulation_stage']], 'flood_closure_not_restorable')
+        require(any(e.get('parent_edge_id', e['id']) == site['edge_id'] and e['blocked'] for e in measured['edges']), 'crossing_already_open')
     if token_type == 'disaster_start':
         state['phase'], state['simulation_stage'] = 'disaster_active', 1
     state['tokens'][token_id] = {'id': token_id, 'type': token_type,
         'board_uv': list(action['board_uv']), 'site_id': site['id'],
         'vision_source': {'physical_perceptron': 'perceptron'}.get(action['source'], action['source']),
         'status': 'accepted'}
+    if road_snap is not None:
+        state['tokens'][token_id]['road_snap'] = road_snap
     state['token_inventory'][token_type] -= 1
     state['budget_remaining_model'] -= site['resource_cost']
     state['narration_event'] = {'event_type': 'bridge_reconnected' if token_type == 'bridge'

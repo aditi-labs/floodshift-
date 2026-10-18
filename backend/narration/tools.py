@@ -33,7 +33,10 @@ class WorldTools:
 
     def call(self, name, arguments=None):
         allowed = {'get_scenario_summary', 'get_route_status', 'get_resource_inventory',
-                   'get_eligible_interventions', 'compare_branches', 'get_service_access', 'get_unmet_needs'}
+                   'get_eligible_interventions', 'compare_branches', 'get_service_access', 'get_unmet_needs', 'get_population_routing'}
         if name not in allowed:
             raise ValueError('unknown_read_only_tool')
         return deepcopy(getattr(self, name)(**(arguments or {})))
+
+    def get_population_routing(self):
+        return self._service.snapshot().get('routing_decision')

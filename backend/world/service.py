@@ -6,16 +6,19 @@ from copy import deepcopy
 from threading import RLock
 
 from backend.planning.ghost_bridge import best_suggestion, eligible_interventions
+from backend.planning.population_routes import plan_population_routes
 from backend.simulation.reachability import measure
 from backend.simulation.routing import route_minutes
 from backend.world.rules import SOURCES, RuleError, initial_state, reduce_action, require
-from backend.world.scenarios import load_bundle
+from backend.world.scenarios import load_bundle, validate_bundle
 from backend.world.session_store import SessionStore, SessionError, SessionConflict, fingerprint
 
 
 class WorldService:
     def __init__(self, bundle=None):
         self._bundle = deepcopy(bundle) if bundle is not None else load_bundle()
+        if 'routing_policy' in self._bundle:
+            validate_bundle(self._bundle)
         self._state = initial_state(self._bundle)
         self._version = 0
         self._seen = set()
@@ -64,7 +67,7 @@ class WorldService:
     def _snapshot(self, state=None, version=None):
         state = self._state if state is None else state
         version = self._version if version is None else version
-        return {'schema_version': 2, 'world_version': version,
+        snapshot = {'schema_version': 2, 'world_version': version,
                 'snapshot_id': 'snap-' + str(version),
                 'scenario_id': self._bundle['scenario_id'],
                 **{k: deepcopy(state[k]) for k in ('phase', 'simulation_stage', 'branch_id',
@@ -74,6 +77,14 @@ class WorldService:
                 'ghost_suggestion': best_suggestion(self._bundle, state),
                 'provenance_label': self._bundle['provenance_label'],
                 'data_mode': self._bundle['data_mode']}
+        if 'routing_policy' in self._bundle:
+            decision = plan_population_routes(self._bundle, snapshot)
+            decision.update(world_version=version, branch_id=state['branch_id'],
+                            scenario_id=self._bundle['scenario_id'], simulation_stage=state['simulation_stage'],
+                            bundle_fingerprint=fingerprint(self._bundle))
+            decision['decision_id'] = 'routing-' + fingerprint(decision)[:24]
+            snapshot['routing_decision'] = decision
+        return snapshot
 
     def snapshot(self):
         with self._lock:
@@ -110,6 +121,11 @@ class WorldService:
     def event_log(self):
         with self._lock:
             return deepcopy(self._events)
+
+    def decision_log(self):
+        """Versioned factual routing records; only accepted actions are recorded."""
+        with self._lock:
+            return deepcopy([event['routing_decision'] for event in self._events if 'routing_decision' in event])
 
     def frozen_copy(self):
         """Detached version-consistent view for narration; no persistence attached."""
@@ -172,6 +188,8 @@ class WorldService:
                 'branch_id': next_state['branch_id'], 'before_version': self._version,
                 'after_version': version, 'action': action, 'metrics_before': before,
                 'metrics_after': snapshot['metrics']}
+            if 'routing_decision' in snapshot:
+                event['routing_decision'] = deepcopy(snapshot['routing_decision'])
             if self._store is not None:
                 try:
                     self._store.save(self._checkpoint(self._events + [event], snapshot))
