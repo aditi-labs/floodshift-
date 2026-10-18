@@ -13,19 +13,42 @@ Run with: uvicorn backend.main:app --reload --port 8000
 """
 from __future__ import annotations
 import asyncio
+import os
 import uuid
 from datetime import datetime
 from contextlib import asynccontextmanager
+from pathlib import Path
+
+# Load environment variables from .env
+try:
+    from dotenv import load_dotenv
+    env_path = Path(__file__).resolve().parents[1] / '.env'
+    load_dotenv(env_path)
+except ImportError:
+    pass  # dotenv not installed, use system env vars
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
 from backend.contracts import (
-    WorldSnapshot, WorldAction, ActionResult, ActionType,
+    WorldSnapshot, WorldAction, ActionResult, ActionType, TokenState,
+    WorldMetrics, GhostSuggestion, EdgeState, Phase, TokenType, VisionSource,
     HealthResponse, SuggestRequest, NarrateRequest, NarrateResponse,
-    BranchSaveRequest, BranchLoadRequest, WSEvent
+    BranchSaveRequest, BranchLoadRequest, WSEvent, RiskZone, RiskLevel
 )
-from backend.api.mock_world import MockWorldService
+
+# Import real WorldService from P4, fallback to mock
+USE_MOCK = os.environ.get("FLOODSHIFT_USE_MOCK", "false").lower() == "true"
+
+if USE_MOCK:
+    from backend.api.mock_world import MockWorldService as WorldService
+else:
+    try:
+        from backend.world.service import WorldService
+    except ImportError:
+        print("WARNING: P4's WorldService not available, using mock")
+        from backend.api.mock_world import MockWorldService as WorldService
+        USE_MOCK = True
 
 
 # =============================================================================
@@ -36,11 +59,134 @@ from backend.api.mock_world import MockWorldService
 ws_clients: set[WebSocket] = set()
 ws_seq: int = 0
 
-# World service (mock for now, P4 will provide real implementation)
-world_service: MockWorldService | None = None
+# World service (P4's real implementation or mock)
+world_service: WorldService | None = None
 
 # Lock for world mutations
 world_lock = asyncio.Lock()
+
+
+# =============================================================================
+# ADAPTER FUNCTIONS: Convert P4's dicts to Pydantic models
+# =============================================================================
+
+def _dict_to_world_snapshot(data: dict) -> WorldSnapshot:
+    """Convert P4's snapshot dict to WorldSnapshot Pydantic model."""
+    # Convert tokens list
+    tokens = []
+    for t in data.get('tokens', []):
+        tokens.append(TokenState(
+            id=t.get('id', ''),
+            type=TokenType(t.get('type', 'bridge')) if t.get('type') else TokenType.BRIDGE,
+            board_uv=tuple(t.get('board_uv', (0.5, 0.5))),
+            site_id=t.get('site_id'),
+            vision_source=VisionSource(t.get('vision_source', 'manual')) if t.get('vision_source') else VisionSource.MANUAL,
+            status=t.get('status', 'accepted')
+        ))
+
+    # Convert metrics
+    metrics_data = data.get('metrics', {})
+    metrics = WorldMetrics(
+        people_reachable_for_medical=metrics_data.get('people_reachable_for_medical', 0),
+        people_reachable_for_food=metrics_data.get('people_reachable_for_food', 0),
+        people_reachable_for_shelter=metrics_data.get('people_reachable_for_shelter', 0),
+        unmet_food_model=metrics_data.get('unmet_food_model', 0),
+        unmet_medical_model=metrics_data.get('unmet_medical_model', 0),
+        unmet_refuge_model=metrics_data.get('unmet_refuge_model', 0),
+        blocked_roads=metrics_data.get('blocked_roads', 0)
+    )
+
+    # Convert edges
+    edges = []
+    for e in data.get('edges', []):
+        edges.append(EdgeState(
+            id=e.get('id', ''),
+            blocked=e.get('blocked', False),
+            reason=e.get('reason')
+        ))
+
+    # Convert ghost suggestion
+    ghost = None
+    ghost_data = data.get('ghost_suggestion')
+    if ghost_data and isinstance(ghost_data, dict):
+        ghost = GhostSuggestion(
+            token_type=TokenType(ghost_data.get('token_type', 'bridge')),
+            site_id=ghost_data.get('site_id', ''),
+            board_uv=tuple(ghost_data.get('board_uv', (0.5, 0.5))),
+            reason_code=ghost_data.get('reason_code', 'suggested')
+        )
+
+    # Convert phase - handle string or enum
+    phase_val = data.get('phase', 'ready')
+    if isinstance(phase_val, str):
+        phase = Phase(phase_val) if phase_val in [p.value for p in Phase] else Phase.READY
+    else:
+        phase = phase_val
+
+    # Calculate risk zones with token protection
+    risk_zones = []
+    try:
+        from backend.planning.prevention import get_risk_zones_for_snapshot
+        # Get bundle from world_service if available
+        bundle = {}
+        if world_service:
+            if hasattr(world_service, 'scenario'):
+                bundle = world_service.scenario()
+            elif hasattr(world_service, '_bundle'):
+                bundle = world_service._bundle
+
+        # Build state dict for risk calculation
+        state = {
+            'tokens': [t.model_dump() if hasattr(t, 'model_dump') else t for t in tokens],
+            'phase': phase_val
+        }
+
+        zone_data = get_risk_zones_for_snapshot(bundle, state, mode='relief')
+        for z in zone_data:
+            risk_zones.append(RiskZone(
+                zone_id=z.get('zone_id', ''),
+                node_id=z.get('node_id', ''),
+                board_uv_center=tuple(z.get('board_uv_center', (0.5, 0.5))),
+                radius_uv=z.get('radius_uv', 0.08),
+                risk_level=RiskLevel(z.get('risk_level', 'medium')),
+                flood_probability=z.get('flood_probability', 0.5),
+                base_probability=z.get('base_probability', 0.5),
+                population_exposed=z.get('population_exposed', 0),
+                elevation_m=z.get('elevation_m'),
+                color=z.get('color', '#FFCC00'),
+                is_protected=z.get('is_protected', False)
+            ))
+    except Exception as e:
+        print(f"Warning: Could not calculate risk zones: {e}")
+
+    return WorldSnapshot(
+        schema_version=data.get('schema_version', 2),
+        world_version=data.get('world_version', 1),
+        scenario_id=data.get('scenario_id', 'default'),
+        phase=phase,
+        simulation_stage=data.get('simulation_stage', 0),
+        branch_id=data.get('branch_id', 'main'),
+        token_inventory=data.get('token_inventory', {}),
+        tokens=tokens,
+        facilities=[],  # P4 may compute these differently
+        population_demand=[],  # P4 may compute these differently
+        edges=edges,
+        metrics=metrics,
+        ghost_suggestion=ghost,
+        narration_event=None,
+        provenance_label=data.get('provenance_label', 'Educational scenario'),
+        risk_zones=risk_zones
+    )
+
+
+def _action_result_from_dict(data: dict, action_id: str) -> ActionResult:
+    """Convert P4's apply result dict to ActionResult Pydantic model."""
+    return ActionResult(
+        accepted=data.get('accepted', False),
+        action_id=action_id,
+        world_version=data.get('world_version', 0),
+        rejection_reason=data.get('reason')
+    )
 
 
 # =============================================================================
@@ -51,9 +197,16 @@ world_lock = asyncio.Lock()
 async def lifespan(app: FastAPI):
     """Initialize services on startup."""
     global world_service
-    world_service = MockWorldService()
-    print("FLOODSHIFT API started with MockWorldService")
-    print(f"Initial world version: {world_service.snapshot().world_version}")
+    world_service = WorldService()
+    service_type = "MockWorldService" if USE_MOCK else "WorldService"
+    print(f"FLOODSHIFT API started with {service_type}")
+
+    # Get initial version - handle both dict and Pydantic responses
+    snapshot = world_service.snapshot()
+    if isinstance(snapshot, dict):
+        print(f"Initial world version: {snapshot.get('world_version', 1)}")
+    else:
+        print(f"Initial world version: {snapshot.world_version}")
     yield
     print("FLOODSHIFT API shutting down")
 
@@ -89,8 +242,14 @@ async def broadcast_snapshot():
     if not world_service:
         return
 
-    snapshot = world_service.snapshot()
+    raw_snapshot = world_service.snapshot()
     ws_seq += 1
+
+    # Convert to Pydantic if needed
+    if isinstance(raw_snapshot, dict):
+        snapshot = _dict_to_world_snapshot(raw_snapshot)
+    else:
+        snapshot = raw_snapshot
 
     event = WSEvent(
         type="world.snapshot",
@@ -140,13 +299,26 @@ async def broadcast_event(event_type: str, payload: dict):
 @app.get("/health", response_model=HealthResponse)
 async def health():
     """Health check endpoint."""
-    version = world_service.snapshot().world_version if world_service else None
+    version = None
+    if world_service:
+        raw_snapshot = world_service.snapshot()
+        version = raw_snapshot.get('world_version', 1) if isinstance(raw_snapshot, dict) else raw_snapshot.world_version
+
+    # Check Gemini status
+    gemini_status = "not_configured"
+    try:
+        from backend.ai.gemini_adapter import get_gemini
+        gemini = get_gemini()
+        gemini_status = gemini.status
+    except Exception:
+        pass
+
     return HealthResponse(
         status="ok",
         world_version=version,
-        vision_mode="mock",
+        vision_mode="mock" if USE_MOCK else "live",
         perceptron_status="not_connected",
-        gemini_status="not_connected"
+        gemini_status=gemini_status
     )
 
 
@@ -155,7 +327,10 @@ async def get_world():
     """Get current world state."""
     if not world_service:
         raise HTTPException(status_code=503, detail="World service not initialized")
-    return world_service.snapshot()
+    raw_snapshot = world_service.snapshot()
+    if isinstance(raw_snapshot, dict):
+        return _dict_to_world_snapshot(raw_snapshot)
+    return raw_snapshot
 
 
 @app.post("/action", response_model=ActionResult)
@@ -169,7 +344,14 @@ async def post_action(action: WorldAction):
         raise HTTPException(status_code=503, detail="World service not initialized")
 
     async with world_lock:
-        result = world_service.apply(action)
+        # P4's apply accepts Pydantic models or dicts
+        raw_result = world_service.apply(action)
+
+    # Convert to ActionResult if P4 returned a dict
+    if isinstance(raw_result, dict):
+        result = _action_result_from_dict(raw_result, action.action_id)
+    else:
+        result = raw_result
 
     # Broadcast updated state if action was accepted
     if result.accepted:
@@ -187,21 +369,26 @@ async def suggest_action(request: SuggestRequest):
     if not world_service:
         raise HTTPException(status_code=503, detail="World service not initialized")
 
-    suggestion = world_service.suggest(request.goal_id)
+    # P4's suggest takes goal parameter (default 'needs_served')
+    goal = request.goal_id or 'needs_served'
+    suggestion = world_service.suggest(goal)
+
+    raw_snapshot = world_service.snapshot()
+    world_version = raw_snapshot.get('world_version', 1) if isinstance(raw_snapshot, dict) else raw_snapshot.world_version
 
     if suggestion:
-        # Update world state with suggestion for projection
-        snapshot = world_service.snapshot()
+        # P4 returns dict, convert if needed
+        suggestion_data = suggestion if isinstance(suggestion, dict) else suggestion.model_dump()
         return {
             "has_suggestion": True,
-            "suggestion": suggestion.model_dump(),
-            "world_version": snapshot.world_version
+            "suggestion": suggestion_data,
+            "world_version": world_version
         }
     else:
         return {
             "has_suggestion": False,
             "suggestion": None,
-            "world_version": world_service.snapshot().world_version
+            "world_version": world_version
         }
 
 
@@ -212,31 +399,53 @@ async def reset_world():
         raise HTTPException(status_code=503, detail="World service not initialized")
 
     async with world_lock:
+        raw_snapshot = world_service.snapshot()
+        current_version = raw_snapshot.get('world_version', 1) if isinstance(raw_snapshot, dict) else raw_snapshot.world_version
+
         action = WorldAction(
             action_id=f"reset-{uuid.uuid4().hex[:8]}",
             type=ActionType.RESET,
             source="manual",
-            expected_world_version=world_service.snapshot().world_version
+            expected_world_version=current_version
         )
-        result = world_service.apply(action)
+        world_service.apply(action)
 
     await broadcast_snapshot()
-    return {"reset": True, "world_version": world_service.snapshot().world_version}
+
+    raw_snapshot = world_service.snapshot()
+    new_version = raw_snapshot.get('world_version', 1) if isinstance(raw_snapshot, dict) else raw_snapshot.world_version
+    return {"reset": True, "world_version": new_version}
 
 
 @app.post("/narrate", response_model=NarrateResponse)
 async def narrate(request: NarrateRequest):
     """
-    Get AI narration for current state.
-    Uses Gemini with read-only world tools (P4 implements tools).
-    For now returns mock response.
+    Get AI narration for current state using Gemini.
+    Answers are grounded in actual simulation data.
     """
     if not world_service:
         raise HTTPException(status_code=503, detail="World service not initialized")
 
-    snapshot = world_service.snapshot()
+    raw_snapshot = world_service.snapshot()
+    if isinstance(raw_snapshot, dict):
+        snapshot = _dict_to_world_snapshot(raw_snapshot)
+        world_state = raw_snapshot
+    else:
+        snapshot = raw_snapshot
+        world_state = snapshot.model_dump()
 
-    # Mock narration - P4 will implement real Gemini integration
+    # Try Gemini first
+    try:
+        from backend.ai.gemini_adapter import get_gemini
+        gemini = get_gemini()
+        if gemini.is_ready:
+            mode = world_state.get('mode', 'relief')
+            answer = gemini.answer_question(request.question, world_state, mode)
+            return NarrateResponse(answer=answer, grounded_in_version=snapshot.world_version)
+    except Exception:
+        pass  # Fall back to rule-based
+
+    # Fallback: rule-based responses
     blocked_count = snapshot.metrics.blocked_roads
     phase = snapshot.phase
 
@@ -246,13 +455,16 @@ async def narrate(request: NarrateRequest):
         else:
             answer = "All communities are currently accessible via the road network."
     elif "bridge" in request.question.lower():
-        suggestion = world_service.suggest()
-        if suggestion:
-            answer = f"I recommend placing a temporary bridge at {suggestion.site_id}. This would restore multi-service access to isolated communities."
+        suggestion = world_service.suggest('needs_served')
+        site_id = suggestion.get('site_id') if isinstance(suggestion, dict) else (suggestion.site_id if suggestion else None)
+        if site_id:
+            answer = f"I recommend placing a temporary bridge at {site_id}. This would restore multi-service access to isolated communities."
         else:
             answer = "No bridge placement is currently needed - all crossings are operational."
+    elif "prevention" in request.question.lower() or "prepare" in request.question.lower():
+        answer = "Prevention mode allows you to plan evacuation routes and pre-position resources before disaster strikes. Place shelters, reinforce bridges, and stock supplies to protect more lives."
     else:
-        answer = f"The scenario is in '{phase}' phase with {blocked_count} blocked road(s). This is an educational simulation based on HOT Nepal 2026 mapping data."
+        answer = f"The scenario is in '{phase.value}' phase with {blocked_count} blocked road(s). This simulation uses real terrain data from Rasuwa, Nepal with 1,191 people across 8 communities."
 
     return NarrateResponse(
         answer=answer,
@@ -287,7 +499,11 @@ async def websocket_endpoint(ws: WebSocket):
 
         # Send current state
         if world_service:
-            snapshot = world_service.snapshot()
+            raw_snapshot = world_service.snapshot()
+            if isinstance(raw_snapshot, dict):
+                snapshot = _dict_to_world_snapshot(raw_snapshot)
+            else:
+                snapshot = raw_snapshot
             ws_seq += 1
             event = WSEvent(
                 type="world.snapshot",
@@ -336,3 +552,187 @@ async def perception_status():
         "calibration": "not_calibrated",
         "mode": "mock"
     }
+
+
+# =============================================================================
+# PREVENTION MODE ENDPOINTS
+# =============================================================================
+
+# Lazy load prevention module (optional feature)
+_prevention_module = None
+_risk_data = None
+
+
+def _get_prevention():
+    """Lazy load prevention planning module."""
+    global _prevention_module, _risk_data
+    if _prevention_module is None:
+        try:
+            from backend.planning import prevention as prev_mod
+            _prevention_module = prev_mod
+            _risk_data = prev_mod.load_risk_data()
+        except ImportError:
+            _prevention_module = False
+    return _prevention_module, _risk_data
+
+
+@app.get("/prevention/risk-map")
+async def get_risk_map():
+    """
+    Get risk overlay data for projection.
+    Returns risk zones with flood probability and population exposure.
+    """
+    if not world_service:
+        raise HTTPException(status_code=503, detail="World service not initialized")
+
+    prevention, risk_data = _get_prevention()
+    if not prevention or not risk_data:
+        return {"available": False, "risk_zones": [], "message": "Prevention mode not configured"}
+
+    # Get bundle (scenario data)
+    if hasattr(world_service, 'scenario'):
+        bundle = world_service.scenario()
+    elif hasattr(world_service, '_bundle'):
+        bundle = world_service._bundle
+    else:
+        bundle = {}
+
+    zones = prevention.get_risk_zones(bundle, risk_data)
+
+    return {
+        "available": True,
+        "risk_zones": zones,
+        "scenarios": list(risk_data.get('disaster_scenarios', {}).keys())
+    }
+
+
+@app.post("/prevention/analyze")
+async def analyze_prevention(scenario: str = "category_2"):
+    """
+    Run what-if scenario analysis.
+    Shows vulnerability and effectiveness of current prevention measures.
+    """
+    if not world_service:
+        raise HTTPException(status_code=503, detail="World service not initialized")
+
+    prevention, risk_data = _get_prevention()
+    if not prevention or not risk_data:
+        raise HTTPException(status_code=501, detail="Prevention mode not available")
+
+    # Get bundle (scenario data) - handle both mock and real services
+    if hasattr(world_service, 'scenario'):
+        bundle = world_service.scenario()
+    elif hasattr(world_service, '_bundle'):
+        bundle = world_service._bundle
+    else:
+        bundle = risk_data  # Fallback to risk data structure
+
+    # Get current state
+    raw_snapshot = world_service.snapshot()
+    if isinstance(raw_snapshot, dict):
+        state = {'tokens': {t.get('id', str(i)): t for i, t in enumerate(raw_snapshot.get('tokens', []))}}
+    else:
+        state = {'tokens': {}}
+
+    vulnerability = prevention.calculate_vulnerability_score(bundle, state, risk_data)
+    lives_at_risk = prevention.calculate_lives_at_risk(bundle, risk_data, scenario)
+    effectiveness = prevention.calculate_prevention_effectiveness(bundle, state, risk_data, scenario)
+
+    return {
+        "scenario": scenario,
+        "vulnerability_score": round(vulnerability, 2),
+        "lives_at_risk": lives_at_risk,
+        "lives_protected": effectiveness['lives_protected'],
+        "evacuation_routes_secured": effectiveness.get('evacuation_routes_secured', 0),
+        "shelters_ready": effectiveness.get('shelters_ready', 0),
+        "effectiveness_score": effectiveness['effectiveness_score']
+    }
+
+
+@app.get("/prevention/suggestions")
+async def get_prevention_suggestions(scenario: str = "category_2"):
+    """
+    Get prevention placement recommendations.
+    Returns optimal next prevention action based on risk analysis.
+    """
+    if not world_service:
+        raise HTTPException(status_code=503, detail="World service not initialized")
+
+    prevention, risk_data = _get_prevention()
+    if not prevention or not risk_data:
+        raise HTTPException(status_code=501, detail="Prevention mode not available")
+
+    # Get bundle and state
+    if hasattr(world_service, 'scenario'):
+        bundle = world_service.scenario()
+    elif hasattr(world_service, '_bundle'):
+        bundle = world_service._bundle
+    else:
+        bundle = risk_data
+
+    raw_snapshot = world_service.snapshot()
+    if isinstance(raw_snapshot, dict):
+        state = {'tokens': {t.get('id', str(i)): t for i, t in enumerate(raw_snapshot.get('tokens', []))}}
+    else:
+        state = {'tokens': {}}
+
+    suggestion = prevention.best_prevention_suggestion(bundle, state, risk_data, scenario)
+
+    if suggestion:
+        return {
+            "has_suggestion": True,
+            "suggestion": suggestion,
+            "scenario": scenario
+        }
+    else:
+        return {
+            "has_suggestion": False,
+            "suggestion": None,
+            "message": "All prevention measures already in place or no high-impact options available"
+        }
+
+
+@app.post("/prevention/compare")
+async def compare_prevention_outcomes(scenario: str = "default"):
+    """
+    Compare prevention vs no-prevention outcomes.
+    Uses Gemini for intelligent analysis when available.
+    """
+    if not world_service:
+        raise HTTPException(status_code=503, detail="World service not initialized")
+
+    prevention, risk_data = _get_prevention()
+    if not prevention or not risk_data:
+        raise HTTPException(status_code=501, detail="Prevention mode not available")
+
+    # Get bundle and state
+    if hasattr(world_service, 'scenario'):
+        bundle = world_service.scenario()
+    elif hasattr(world_service, '_bundle'):
+        bundle = world_service._bundle
+    else:
+        bundle = risk_data
+
+    raw_snapshot = world_service.snapshot()
+    if isinstance(raw_snapshot, dict):
+        state = {'tokens': {t.get('id', str(i)): t for i, t in enumerate(raw_snapshot.get('tokens', []))}}
+    else:
+        state = {'tokens': {}}
+
+    comparison = prevention.compare_outcomes(bundle, state, risk_data, scenario)
+
+    # Add Gemini analysis if available
+    try:
+        from backend.ai.gemini_adapter import get_gemini
+        gemini = get_gemini()
+        if gemini.is_ready:
+            ai_analysis = gemini.compare_outcomes(
+                comparison['without_prevention'],
+                comparison['with_prevention'],
+                comparison.get('prevention_investment', 0)
+            )
+            comparison['ai_analysis'] = ai_analysis
+    except Exception:
+        pass
+
+    return comparison

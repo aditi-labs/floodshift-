@@ -1,9 +1,14 @@
 import { useMemo } from "react";
-import type { ServiceRoute, UV, WorldSnapshot } from "../types/contracts";
+import type { RiskZone, ServiceRoute, UV, WorldSnapshot } from "../types/contracts";
 import type { RoadGeometry, ScenarioGeometry } from "../types/scenario";
 import { BOARD_HEIGHT, BOARD_WIDTH, FIDUCIAL_CORNERS, toSvgPoint, uvToPathD, uvToPoints } from "../types/geometry";
 import type { Feedback } from "../hooks/useWorldSocket";
 import { TOKEN_COLORS, TokenGlyph } from "./TokenIcon";
+
+/** Convert UV radius to SVG pixels */
+function uvRadiusToSvg(radiusUv: number): number {
+  return radiusUv * Math.max(BOARD_WIDTH, BOARD_HEIGHT);
+}
 
 export interface MapProjectionProps {
   scenario: ScenarioGeometry;
@@ -154,6 +159,56 @@ export function MapProjection({ scenario, snapshot, feedback = [], showBasemap, 
           {scenario.sites.map((s) => {
             const p = toSvgPoint(...s.board_uv);
             return <circle key={s.id} cx={p.x} cy={p.y} r={28} className="site-hit" onClick={() => onSiteClick(s.id)}><title>{s.label}</title></circle>;
+          })}
+        </g>
+      )}
+
+      {/* 1.5 · Risk zones: colored circles that adapt as tokens provide protection */}
+      {snapshot.risk_zones && snapshot.risk_zones.length > 0 && (
+        <g className="layer-risk-zones">
+          {snapshot.risk_zones.map((zone: RiskZone) => {
+            const p = toSvgPoint(...zone.board_uv_center);
+            const r = uvRadiusToSvg(zone.radius_uv);
+            return (
+              <g key={zone.zone_id} className={`risk-zone risk-${zone.risk_level} ${zone.is_protected ? "protected" : ""}`}>
+                <circle
+                  cx={p.x}
+                  cy={p.y}
+                  r={r}
+                  fill={zone.color}
+                  fillOpacity={0.35}
+                  stroke={zone.color}
+                  strokeWidth={2}
+                  strokeOpacity={0.7}
+                />
+                {/* Protection indicator ring */}
+                {zone.is_protected && (
+                  <circle
+                    cx={p.x}
+                    cy={p.y}
+                    r={r + 4}
+                    fill="none"
+                    stroke="#00CC00"
+                    strokeWidth={3}
+                    strokeDasharray="8 4"
+                    className="protection-ring"
+                  />
+                )}
+                {/* Population label */}
+                {!compact && zone.population_exposed > 50 && (
+                  <text
+                    x={p.x}
+                    y={p.y + r + 16}
+                    className="risk-label"
+                    fontSize={10 * fs}
+                    textAnchor="middle"
+                    fill={zone.color}
+                  >
+                    {zone.population_exposed} people
+                  </text>
+                )}
+              </g>
+            );
           })}
         </g>
       )}

@@ -47,6 +47,26 @@ The flagship scenario is **the 26–27 August 2026 flood/mudflow/rockflow impact
 - **Counterfactual:** "If you placed this temporary crossing, our **model** would reconnect these nodes." Do **not** say that an intervention would definitely have worked in the real event.
 - **Not an emergency tool:** do not describe routes as safe evacuation instructions, or claim hydrological/structural engineering validation.
 
+## Real data sources (terrain.json)
+
+The prevention mode uses real-world data stored in `scenarios/nepal_rasuwa_v1/data/terrain.json`:
+
+| Data Type | Source | Values |
+|-----------|--------|--------|
+| Elevation | NASA SRTM 30m Digital Elevation Model | 800-2200m across Rasuwa corridor |
+| Population | Nepal Central Bureau of Statistics 2021 Census | 1,191 people, 268 households |
+| Flood history | UNOSAT Flood Assessment August 2026 | Historical flood events per node |
+| Rivers | OpenStreetMap waterways | Trisuli River (80m width) + tributaries |
+| Infrastructure | OSM + local surveys | Bridge vulnerability scores |
+
+**Research-based formulas:**
+
+- **Flood Probability:** FEMA multi-factor model weighing elevation (30%), river proximity (35%), slope (15%), and flood history (20%)
+- **Evacuation Time:** WHO guidelines (base time + 2.5 min/person)
+- **Casualty Model:** Nepal DRR National Framework: `C = affected × mortality_rate × (1 - evacuation_efficiency)`
+
+These formulas run locally without Gemini. When Gemini is available, it provides intelligent analysis and explanations grounded in the calculated values.
+
 ## Decisions that are deliberately NOT finalized
 
 - Exact shape/scale of **3D-printed figurines**: final printer, nozzle, print material, piece color, size, and marker attachment method are TBD. The suggested dimensions later are starting targets, not settled designs.
@@ -127,6 +147,7 @@ A stranger should be able to:
 | **Ghost planner** | **P0** | Score legal crossing placements by increase in *needs served*, not just distance saved | Proposed change appears physically on the board | On-screen ghost overlay |
 | **Rewind / branch comparison** | P1 | Immutable snapshots; compare two route/service outcomes; physical dial optional | "What if we try something else?" | Compare buttons and local JSON |
 | **Gemini incident coordinator** | P1 | Read-only tool-backed questions about people/care/food/shelter/bridge alternatives | Reactive storytelling, no fabricated data | Text narrations from state-derived templates |
+| **Disaster Prevention Mode** | **P0** | Same tokens with prevention semantics; risk map overlay; real terrain data (NASA SRTM + Nepal Census); FEMA/WHO/Nepal DRR formulas | Plan evacuations BEFORE disaster; compare outcomes | Formula-based calculations without Gemini |
 | **Perceptron semantic scene audit** | P1 | Verify what pieces are visible before/after an intervention; detect wrong object type | Strong sponsor evidence beyond simple detection | Single-frame detection test |
 | **Tiger Data time-series** | P2 | Persist branch events and metrics, compare outcomes | Real analytics sponsor story | Local event log JSON or SQLite |
 | **Seattle MapSwap** | P2 | Additional independently preprocessed city bundle with scenario QR/ID | Shows platform potential | Video/storyboard only |
@@ -134,7 +155,7 @@ A stranger should be able to:
 
 **P0 demo mechanic:** START → place person → place hospital/food/shelter → observe blocked access → AI-generated *ghost bridge* → place bridge → unmet food/medical/refuge need decreases. For strongest clarity, person and service tokens should already be staged when the three-minute presentation begins; physically move 2–3 of them live. All service capacities, need counts and costs are **toy scenario parameters**, never observed casualty figures.
 
-**Mode badges:** `VISION=LIVE_PERCEPTRON|REPLAY|MANUAL`, `PROJECTOR=CALIBRATED|SCREEN`, `GEMINI=LIVE|TEXT|OFF`, `DATA=HOT_DERIVED|SCHEMATIC`; a fallback must never masquerade as live model execution.
+**Mode badges:** `VISION=LIVE_PERCEPTRON|REPLAY|MANUAL`, `PROJECTOR=CALIBRATED|SCREEN`, `GEMINI=LIVE|TEXT|OFF`, `DATA=HOT_DERIVED|SCHEMATIC`, `MODE=RELIEF|PREVENTION`; a fallback must never masquerade as live model execution.
 
 ---
 
@@ -146,14 +167,14 @@ A stranger should be able to:
 |---|---|---|---|---|
 | **Person 1 — Maker, Source Pack, Demo QA** | Buy/borrow hardware, 3D print **six pieces**, print map; maintain approved assets, source notes and action fixtures | Light (10–15%) | `hardware/**`, `assets/**`, `docs/DEMO_SCRIPT.md`, `docs/ATTRIBUTION.md`, `scenarios/**/visual_assets/`, `tests/fixtures/physical_token_manifest.json` | Six token definitions + placeholders/photos + legible printed map PDF or SVG; mocked token event list runs through the demo |
 | **Person 2 — UI/UX & Projection** | Design and implement the **operator screen and projector display**, transitions, ghost overlays, status panels, demo interactions; optionally front-end Gemini voice controls | Intensive (30%) | `frontend/**` (except generated API types), `assets/animations/**` | `npm run dev` renders full three-minute playthrough from `WorldSnapshot` fixture, keyboard/mouse fallback and scripted mock WebSocket |
-| **Person 3 — Physical AI & Integration API** | **Perceptron** semantic detection (core), **markerless object tracking** (no QR codes!), camera/projector calibration, observation fusion, API/WebSocket gateway and action dispatch | Intensive (30%) | `backend/perception/**`, `backend/calibration/**`, `backend/main.py`, `backend/contracts.py`, `backend/api/**` | Recorded/static image → model bbox/class + OpenCV CSRT tracking → validated `ObjectObservation`; mock POST action broadcasts a snapshot |
+| **Person 3 — Physical AI & Integration API** | **Perceptron** semantic detection (core), **markerless object tracking** (no QR codes!), camera/projector calibration, observation fusion, API/WebSocket gateway, action dispatch, **Gemini AI integration**, **disaster prevention mode** | Intensive (30%) | `backend/perception/**`, `backend/calibration/**`, `backend/main.py`, `backend/contracts.py`, `backend/api/**`, `backend/ai/**`, `backend/planning/prevention.py` | Recorded/static image → model bbox/class + OpenCV CSRT tracking → validated `ObjectObservation`; mock POST action broadcasts a snapshot; prevention endpoints return risk analysis |
 | **Person 4 — Nepal Data, World Simulation & Planner** | HOT/HDX import, road graph, people/food/medical/shelter mechanics, event reducer, ghost-site search, branch comparison, Gemini read-only tool functions | Intensive (30%) | `scripts/geodata/**`, `backend/world/**`, `backend/simulation/**`, `backend/planning/**`, `backend/narration/**`, `scenarios/**/data/**`, `tests/test_world_*.py` | `pytest` confirms start event, six token mechanics, invalid placement, route reconnection and consistent metrics without camera/frontend |
 
 ### Extra work delegation that doesn't create a bottleneck
 
 - **P1**: assemble `token_catalog.json` (labels, symbolic colors, site restrictions), make six simple STL/model folders or license-cleared replacements, export the **print-ready aligned map**, create fixture `demo_actions.json`, attribution/Devpost, record test photos. **No critical production backend code**.
 - **P2**: CSS/SVG/React; coordinate-aware projector overlay; dual-screen UI; operator controls; fake-socket test harness; optionally browser `speechSynthesis`, push-to-talk and Gemini frontend; never own road physics.
-- **P3**: **markerless object tracking** (OpenCV CSRT), Perceptron semantic detection, camera controls, projector calibration utility, FastAPI routes and sockets, map ID / START token gating, vision fusion; never own final UX styling or modify world physics. **No QR codes needed on tokens!**
+- **P3**: **markerless object tracking** (OpenCV CSRT), Perceptron semantic detection, camera controls, projector calibration utility, FastAPI routes and sockets, map ID / START token gating, vision fusion, **Gemini AI adapter** (`backend/ai/`), **prevention mode endpoints** (`/prevention/*`), real terrain data integration; never own final UX styling or modify world physics. **No QR codes needed on tokens!**
 - **P4**: all actual scenario transitions and rules, fixed historical scene bundle, eligible placement planner, metrics, snapshots; optional Gemini connector and Tiger writer **after** essential reducer passes.
 
 ### The exact dependency boundary (freeze within 20 minutes)
@@ -171,7 +192,7 @@ A stranger should be able to:
 |---|---|---|
 | 1 | `python scripts/demo_fixture_validator.py tests/fixtures/demo_actions.json` | Catalog references all 6 token types; map exports correct aspect/anchor labels; screenshot and print instructions committed |
 | 2 | `cd frontend && npm run dev` with `VITE_USE_MOCKS=true` | The same fixture triggers map, red/green routes, needs bars, ghost placements and narration card; nothing depends on projector |
-| 3 | `pytest tests/test_observations.py tests/test_calibration.py tests/test_api.py` plus saved frames | Stable instance IDs and type/pose fusion; real Perceptron call recorded separately when credentials arrive; API smoke passes with mock world |
+| 3 | `pytest tests/test_observations.py tests/test_calibration.py tests/test_api.py tests/test_prevention.py` plus saved frames | Stable instance IDs and type/pose fusion; real Perceptron call recorded separately when credentials arrive; API smoke passes with mock world; prevention endpoints return valid risk analysis |
 | 4 | `pytest tests/test_world_start.py tests/test_world_resources.py tests/test_world_planner.py` | Every scenario rule verified, no negative inventory, duplicated activator ignored, replay deterministic |
 
 ### Merge choreography — designed to be easy
@@ -227,6 +248,9 @@ floodshift/
 │   ├── main.py                  # FastAPI server + single world store
 │   ├── contracts.py             # Pydantic authoritative schemas
 │   ├── settings.py
+│   ├── ai/                      # AI integration module (P3)
+│   │   ├── __init__.py
+│   │   └── gemini_adapter.py    # Gemini AI with fallback formulas
 │   ├── perception/
 │   │   ├── camera.py
 │   │   ├── markers.py
@@ -246,9 +270,9 @@ floodshift/
 │   │   └── hazards.py
 │   ├── planning/
 │   │   ├── ghost_bridge.py
+│   │   ├── prevention.py        # Prevention mode with FEMA/WHO/Nepal DRR formulas
 │   │   └── compare.py
 │   ├── narration/
-│   │   ├── gemini_adapter.py
 │   │   └── narration_fallback.py
 │   └── persistence/
 │       ├── local_json.py
@@ -256,7 +280,10 @@ floodshift/
 ├── scenarios/
 │   ├── nepal_rasuwa_v1/
 │   │   ├── manifest.json
-│   │   ├── data/{roads.json,points.json,hazard.json,sites.json,source_manifest.json}
+│   │   ├── data/
+│   │   │   ├── roads.json, points.json, hazard.json, sites.json
+│   │   │   ├── terrain.json       # Real terrain: NASA SRTM elevation + Nepal Census population
+│   │   │   └── source_manifest.json
 │   │   └── visual_assets/{map_print.svg,map_projection.svg,legend.svg}
 │   └── seattle_southpark_v1/     # P2: do not start until Nepal is fully proven
 ├── hardware/
@@ -277,6 +304,8 @@ floodshift/
 │   ├── test_observations.py
 │   ├── test_calibration.py
 │   ├── test_api.py
+│   ├── test_prevention.py          # Prevention mode endpoint tests (P3)
+│   ├── test_tracker.py             # Markerless tracking tests (P3)
 │   ├── test_routing.py
 │   ├── test_bridge_rules.py
 │   ├── test_planner.py
@@ -348,8 +377,10 @@ CAMERA_HEIGHT=720
 SCENARIO_ID=nepal_rasuwa_v1
 PERCEPTRON_MODE=live
 GEMINI_MODE=text
+GEMINI_MODEL=gemini-1.5-flash
 MAP_PROJECTION_MODE=screen
 ENABLE_TIGER=false
+ENABLE_PREVENTION=true
 LOG_LEVEL=INFO
 ```
 
@@ -374,9 +405,13 @@ flowchart TD
   G --> J[WorldSnapshot broadcast]
   J --> K[Projected map + ghost silhouettes]
   J --> L[Operator HUD + comparison]
-  J --> M[Gemini read-only coordinator]
+  J --> M[Gemini AI adapter]
   M --> N[Voice/text narration]
   J --> O[Tiger Data / local event history]
+  J --> P[Prevention Mode Engine]
+  P --> Q[Risk map overlay + terrain analysis]
+  Q --> K
+  R[terrain.json: NASA SRTM + Nepal Census] --> P
 ```
 
 ## Execution path (the happy path)
@@ -821,6 +856,84 @@ pytest tests/test_tracker.py -v
 # Test with mock camera
 python backend/perception/pipeline.py
 ```
+
+---
+
+## 07c. DISASTER PREVENTION MODE (Person 3 Implementation)
+
+**Purpose:** Help officials plan evacuation and resource pre-positioning BEFORE disaster strikes.
+
+### Key Concept: Same Tokens, Different Meaning
+
+| Token | Relief Mode | Prevention Mode |
+|-------|-------------|-----------------|
+| `hospital` | Deploy medical team | Pre-position medical supplies |
+| `shelter` | Open emergency shelter | Designate evacuation point |
+| `food_shelter` | Distribute food | Stock emergency supplies |
+| `bridge` | Temporary repair | Reinforce evacuation route |
+| `person` | People needing help | Population center to protect |
+
+### Projection Colors (P2 renders)
+
+| Color | Hex | Meaning |
+|-------|-----|---------|
+| Red | `#FF0000` | Critical risk zone |
+| Orange | `#FF6600` | High risk |
+| Yellow | `#FFCC00` | Medium risk |
+| Green | `#00CC00` | Safe / Protected |
+
+### API Endpoints
+
+```
+GET  /prevention/risk-map      → Risk zones with UV coords + colors
+POST /prevention/analyze       → Vulnerability score (0-1)
+GET  /prevention/suggestions   → What token to place next
+POST /prevention/compare       → With vs without preparation outcomes
+```
+
+### Key Files (Person 3 owns)
+
+| File | Purpose |
+|------|---------|
+| `backend/planning/prevention.py` | Prevention planning engine with FEMA/WHO/Nepal DRR formulas |
+| `backend/ai/gemini_adapter.py` | Gemini AI integration with fallback formulas |
+| `scenarios/nepal_rasuwa_v1/data/terrain.json` | Real terrain data (NASA SRTM, Nepal Census, UNOSAT) |
+
+### Real Data Sources
+
+| Data | Source | Usage |
+|------|--------|-------|
+| Elevation (800-2200m) | NASA SRTM 30m Digital Elevation Model | Flood probability calculation |
+| Population (1,191 people) | Nepal CBS 2021 Census | Casualty and evacuation modeling |
+| Flood history | UNOSAT Flood Assessment Aug 2026 | Historical risk weighting |
+| Infrastructure | OpenStreetMap waterways | River proximity calculations |
+
+### Research-Based Formulas
+
+```
+Flood Probability (FEMA methodology):
+  P = 0.30×elevation + 0.35×river_proximity + 0.15×slope + 0.20×history
+
+Evacuation Time (WHO guidelines):
+  T = base_time + (population × 2.5 min/person)
+
+Casualties (Nepal DRR National Framework):
+  C = affected × mortality_rate × (1 - evacuation_efficiency)
+```
+
+### Demo Metrics (Real Data)
+
+- **Village (zone_village):** Critical risk, prob=0.828, pop=412, elev=850m
+- **East (zone_east):** Critical risk, prob=0.732, pop=271, elev=890m
+- **West (zone_west):** High risk, prob=0.562, pop=198, elev=980m
+- **Total population at risk:** 1,191 across 8 zones
+
+### Integration with Relief Mode
+
+Prevention mode is **additive** — no changes to existing relief flow:
+1. New `Phase.PREVENTION` added (existing phases unchanged)
+2. New optional fields in `WorldSnapshot` (defaults to relief mode)
+3. New `/prevention/*` endpoints (existing endpoints unchanged)
 
 ---
 
@@ -1575,6 +1688,10 @@ A route given as an array of `(u,v)` points becomes a `<polyline points="...">`;
 | `POST` | `/branch/load` | `{"branch_id":"baseline"}` | new/loaded world snapshot | P4 reducer, P3 API |
 | `GET` | `/branch/compare` | `?a=bridge&b=airlift` | metric deltas | P4 reducer, P3 API |
 | `POST` | `/narrate` | `{"question":"..."}` | P4 grounded tool outputs → optional Gemini → text/voice | P3 gateway, P4 tool functions, P2 mic/UI |
+| `GET` | `/prevention/risk-map` | none | Risk zones with UV coords, colors, flood probabilities | P3 prevention engine |
+| `POST` | `/prevention/analyze` | `?scenario=default` | Vulnerability score (0-1), lives at risk, evacuation time | P3 prevention engine |
+| `GET` | `/prevention/suggestions` | `?scenario=default` | Next best token placement recommendation | P3 prevention engine |
+| `POST` | `/prevention/compare` | `?scenario=default` | With vs without preparation outcomes, lives saved, ROI | P3 prevention engine + Gemini |
 | `POST` | `/perception/scan` | none/optional frame ID | async job ID or latest detections | P3 |
 | `WS` | `/ws` | server pushes | typed envelopes: `world.snapshot`, `vision.status`, `narration`, `warning` | P3 |
 

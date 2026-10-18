@@ -1,0 +1,185 @@
+{
+  "risk_model_version": 2,
+  "method": "evacuation_planning_model",
+  "provenance": "Educational model for evacuation planning; not actual emergency guidance",
+
+  "node_risk": {
+    "depot": {
+      "elevation_m": 1200,
+      "flood_risk": 0.1,
+      "population": 0,
+      "evacuation_priority": "low"
+    },
+    "west": {
+      "elevation_m": 1050,
+      "flood_risk": 0.4,
+      "population": 50,
+      "evacuation_priority": "medium"
+    },
+    "east": {
+      "elevation_m": 900,
+      "flood_risk": 0.7,
+      "population": 120,
+      "evacuation_priority": "high"
+    },
+    "village": {
+      "elevation_m": 850,
+      "flood_risk": 0.85,
+      "population": 200,
+      "evacuation_priority": "critical"
+    },
+    "medical": {
+      "elevation_m": 1150,
+      "flood_risk": 0.2,
+      "population": 20,
+      "evacuation_priority": "low"
+    },
+    "food": {
+      "elevation_m": 1000,
+      "flood_risk": 0.5,
+      "population": 30,
+      "evacuation_priority": "medium"
+    },
+    "refuge": {
+      "elevation_m": 1100,
+      "flood_risk": 0.15,
+      "population": 0,
+      "evacuation_priority": "safe_zone"
+    },
+    "north": {
+      "elevation_m": 1250,
+      "flood_risk": 0.1,
+      "population": 80,
+      "evacuation_priority": "low"
+    }
+  },
+
+  "edge_vulnerability": {
+    "depot_west": {
+      "vulnerability": 0.2,
+      "is_evacuation_route": true
+    },
+    "crossing_east_road": {
+      "vulnerability": 0.9,
+      "is_evacuation_route": true,
+      "critical": true
+    },
+    "east_village": {
+      "vulnerability": 0.6,
+      "is_evacuation_route": true
+    },
+    "medical_road": {
+      "vulnerability": 0.3,
+      "is_evacuation_route": false
+    },
+    "food_road": {
+      "vulnerability": 0.5,
+      "is_evacuation_route": false
+    },
+    "refuge_road": {
+      "vulnerability": 0.25,
+      "is_evacuation_route": true,
+      "leads_to_safety": true
+    },
+    "crossing_north_road": {
+      "vulnerability": 0.85,
+      "is_evacuation_route": true
+    }
+  },
+
+  "token_prevention_effects": {
+    "hospital": {
+      "effect": "pre_position_medical",
+      "reduces_casualties_pct": 0.3,
+      "coverage_radius_uv": 0.15,
+      "description": "Pre-positioned medical supplies reduce response time"
+    },
+    "shelter": {
+      "effect": "designate_evacuation_point",
+      "capacity_people": 50,
+      "coverage_radius_uv": 0.2,
+      "description": "Designated shelter for evacuees"
+    },
+    "food_shelter": {
+      "effect": "stock_emergency_supplies",
+      "days_of_supplies": 7,
+      "coverage_radius_uv": 0.15,
+      "description": "Emergency food and water stockpile"
+    },
+    "bridge": {
+      "effect": "reinforce_crossing",
+      "survival_bonus": 0.8,
+      "description": "Reinforced bridge maintains evacuation route"
+    },
+    "person": {
+      "effect": "mark_population_center",
+      "evacuation_priority_boost": true,
+      "description": "Marks community requiring evacuation plan"
+    }
+  },
+
+  "risk_zones": [
+    {
+      "zone_id": "critical_village",
+      "center_uv": [0.75, 0.4],
+      "radius_uv": 0.12,
+      "risk_level": "critical",
+      "population": 200,
+      "flood_probability": 0.85,
+      "color_hex": "#FF0000"
+    },
+    {
+      "zone_id": "high_risk_east",
+      "center_uv": [0.6, 0.5],
+      "radius_uv": 0.1,
+      "risk_level": "high",
+      "population": 120,
+      "flood_probability": 0.7,
+      "color_hex": "#FF6600"
+    },
+    {
+      "zone_id": "medium_risk_food",
+      "center_uv": [0.2, 0.6],
+      "radius_uv": 0.08,
+      "risk_level": "medium",
+      "population": 30,
+      "flood_probability": 0.5,
+      "color_hex": "#FFCC00"
+    },
+    {
+      "zone_id": "medium_risk_west",
+      "center_uv": [0.35, 0.5],
+      "radius_uv": 0.1,
+      "risk_level": "medium",
+      "population": 50,
+      "flood_probability": 0.4,
+      "color_hex": "#FFCC00"
+    },
+    {
+      "zone_id": "safe_refuge",
+      "center_uv": [0.35, 0.75],
+      "radius_uv": 0.1,
+      "risk_level": "safe",
+      "population": 0,
+      "flood_probability": 0.15,
+      "color_hex": "#00CC00"
+    },
+    {
+      "zone_id": "safe_north",
+      "center_uv": [0.65, 0.15],
+      "radius_uv": 0.1,
+      "risk_level": "low",
+      "population": 80,
+      "flood_probability": 0.1,
+      "color_hex": "#66CC66"
+    }
+  ],
+
+  "evacuation_metrics": {
+    "total_population": 500,
+    "critical_population": 320,
+    "safe_zones": ["refuge", "north", "depot"],
+    "baseline_evacuation_time_minutes": 180,
+    "baseline_casualties_model": 45
+  }
+}

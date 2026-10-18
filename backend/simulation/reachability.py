@@ -1,5 +1,6 @@
 """Allocate each independent need once, with stable nearest-service ordering."""
 from backend.simulation.routing import route_minutes, route_geometry
+from backend.simulation.population_positions import split_at_groups
 
 NEEDS = {'hospital': ('medical', 'medical'), 'food_shelter': ('food', 'food'),
          'shelter': ('refuge', 'shelter')}
@@ -10,26 +11,39 @@ def measure(bundle, state):
     restored = {sites[t['site_id']]['edge_id'] for t in state['tokens'].values()
                 if t['type'] == 'bridge'}
     blocked_ids = set(bundle['hazard']['stages'][state['simulation_stage']])
-    edges = [dict(e, blocked=e['id'] in blocked_ids and e['id'] not in restored,
+    non_restorable = set(bundle['hazard'].get('non_restorable_stages', [[]]*len(bundle['hazard']['stages']))[state['simulation_stage']])
+    excluded_sites = set(bundle['hazard'].get('site_stages', [[]]*len(bundle['hazard']['stages']))[state['simulation_stage']])
+    edges = [dict(e, blocked=e['id'] in blocked_ids and (e['id'] not in restored or e['id'] in non_restorable),
                   reason='counterfactual_temporary_bridge' if e['id'] in restored else
                   ('illustrative_disruption' if e['id'] in blocked_ids else 'model_open'))
              for e in bundle['roads']['edges']]
     nodes = {n['id']: n for n in bundle['roads']['nodes']}
+    origins = {}
+    if 'routing_policy' in bundle:
+        edges, nodes, origins = split_at_groups(bundle, state, edges)
     def route(a, b):
         return route_minutes(edges, a, b, nodes)
     facilities, people, allocations = [], [], []
     for token in sorted(state['tokens'].values(), key=lambda t: t['id']):
-        site = sites[token['site_id']]
+        site = sites.get(token['site_id'], {'id': token['site_id'], 'node_id': origins.get(token['id']),
+            'demand': {'households_model': 0, 'people_model': 0, 'need_food': 0, 'need_medical': 0, 'need_refuge': 0}})
         if token['type'] in NEEDS:
             supplied = route(bundle['depot_node'], site['node_id'])['reachable']
             facilities.append({'id': token['id'], 'type': token['type'],
                                'site_id': site['id'], 'node_id': site['node_id'],
                                'capacity_model': site['capacity_model'],
                                'used_capacity_model': 0, 'reachable': supplied,
-                               'active': supplied if token['type'] == 'food_shelter' else True})
+                               'active': site['id'] not in excluded_sites and (supplied if token['type'] == 'food_shelter' else True)})
         elif token['type'] == 'person':
-            people.append(dict(site['demand'], id=site['id'], token_id=token['id'],
-                               node_id=site['node_id']))
+            demand = dict(site['demand'])
+            if 'population_size_model' in token:
+                size = token['population_size_model']
+                demand.update(people_model=size, need_food=size, need_refuge=size,
+                              need_medical=(size+3)//4, households_model=1)
+            people.append(dict(demand, id=site['id'], token_id=token['id'], node_id=site['node_id']))
+    if 'routing_policy' in bundle:
+        for population in people:
+            population.update(headcount_known=False, group_equivalents=1)
     people.sort(key=lambda p: p['id'])
     metrics = {'blocked_roads': sum(e['blocked'] for e in edges),
                'resource_spent': bundle['budget_model'] - state['budget_remaining_model']}
@@ -59,5 +73,9 @@ def measure(bundle, state):
             metrics['unmet_' + need + '_model'] += remaining
     metrics['reachable_communities'] = sum(route(bundle['depot_node'], p['node_id'])['reachable'] for p in people)
     metrics['road_access_fraction'] = sum(not e['blocked'] for e in edges) / len(edges) if edges else 0
-    return {'edges': edges, 'facilities': facilities, 'population_demand': people,
-            'routes': allocations, 'metrics': metrics}
+    result = {'edges': edges, 'facilities': facilities, 'population_demand': people,
+              'routes': allocations, 'metrics': metrics}
+    if 'routing_policy' in bundle:
+        result['routing_nodes'] = list(nodes.values())
+        result['population_unit'] = 'unspecified_population_group_no_headcount'
+    return result

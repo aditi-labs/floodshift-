@@ -1,0 +1,89 @@
+{
+  "scenario_id": "nepal_rasuwa_reasoning_v1",
+  "scenario_version": 2,
+  "depot_node": "336740.745:3116467.408",
+  "budget_model": 8,
+  "token_inventory": {
+    "disaster_start": 1,
+    "person": 4,
+    "hospital": 1,
+    "food_shelter": 1,
+    "shelter": 2,
+    "bridge": 1
+  },
+  "data_mode": "HOT_DERIVED",
+  "routing_mode": "illustrative_mixed_road_and_footpath_access",
+  "provenance_label": "HOT/OSM mapped geography; closures, demand, service pads and intervention outcomes are educational assumptions, not operational guidance.",
+  "board": {
+    "uv_origin": "top_left",
+    "width_mm": 420,
+    "height_mm": 420,
+    "dimensions_provisional": true,
+    "aspect_ratio": 1.0,
+    "control_inset_uv": [
+      0.84,
+      0.84,
+      1.0,
+      1.0
+    ]
+  },
+  "cost_policy": "Removing or moving a token refunds its model deployment cost; START is latched until reset.",
+  "routing_policy": {
+    "paths_per_shelter": 16,
+    "snap_tolerance_uv": 0.015,
+    "snapped_node_capacity_groups": 3,
+    "shelter_capacity_groups": {
+      "shelter_site_west": 2,
+      "shelter_site_depot": 2
+    },
+    "edge_capacity_model": {
+      "crossing_east_road": 0.5,
+      "crossing_south_road": 0.5,
+      "crossing_west_road": 0.5,
+      "road-06f930b5e476": 2,
+      "road-1991820fb31f": 2,
+      "road-5cd324e743fa": 2,
+      "road-68d012ef075d": 2,
+      "road-7cae6a171bef": 2,
+      "road-8572c07bffde": 2,
+      "road-89c140a04a3b": 2,
+      "road-9d1ddc3cee5d": 2,
+      "road-9fa449156a79": 2,
+      "road-b33aa9dfc079": 2,
+      "road-b57bfe6201ae": 2,
+      "road-c54bc2b085b3": 2,
+      "road-d7db1525eb16": 2,
+      "road-e330a4e786e8": 2,
+      "road-eb4c2e2311b1": 2
+    },
+    "node_capacity_model": {
+      "336390.699:3116687.930": 3,
+      "336550.940:3116285.243": 3,
+      "336740.745:3116467.408": 3,
+      "336763.019:3116549.789": 3,
+      "336841.294:3117013.637": 3,
+      "336911.680:3116545.792": 3,
+      "336963.156:3116559.550": 3,
+      "337002.068:3116535.822": 3,
+      "337034.847:3116484.483": 3,
+      "337085.940:3116605.325": 3,
+      "337269.172:3116699.815": 3,
+      "337292.463:3116549.174": 3,
+      "337301.636:3116540.516": 3,
+      "337312.634:3116674.884": 3,
+      "337380.007:3116413.605": 3,
+      "337389.815:3116434.217": 3
+    },
+    "assumptions": [
+      "Four population pieces with unspecified headcounts; each represents one normalized group.",
+      "Groups can split into fractions; tokens snap to the nearest mapped road within 0.015 board UV.",
+      "Shelter evacuation is separate from food/medical/refuge service allocation metrics.",
+      "Road capacity 2 group equivalents, bridge capacity 0.5, junction capacity 3 per planning wave.",
+      "Capacities, demand, walking costs and shelter suitability are authored educational assumptions, not measured facts.",
+      "Flood closures come from Copernicus RP10/RP100 footprints; 82/90 wet pixels are quality-flagged, and no-data is not verified dry.",
+      "Shared edge capacity covers both directions; no departure-time simulation or real safety guarantee.",
+      "Unassigned groups remain at their origins; waiting crowding is reported separately.",
+      "Joint fractional linear programming among up to 16 shortest paths per shelter; omitted paths are disclosed."
+    ]
+  }
+}
