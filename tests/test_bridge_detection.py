@@ -8,7 +8,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 import backend.main as main
-from backend.perception.bridge_detector import PROFILE_PATH, detect_bridges, load_profile
+from backend.perception.bridge_detector import (
+    PROFILE_PATH, detect_bridges, isolate_yellow, load_profile, yellow_mask)
 from backend.perception.perceptron_adapter import PerceptronAdapter, PERCEPTRON_CLASSES
 from backend.world.service import WorldService
 from backend.world.demo import place, staged_world
@@ -222,21 +223,23 @@ def test_board_watcher_ignores_everything_outside_the_board_and_sends_the_bridge
     assert watcher.classifier_calls == 0  # local rule; Perceptron never called
 
 
+class FakePerceptron:
+    """Always sees a hospital at (760..840, 380..460); counts how often it is asked."""
+    available = True
+    last_latency_ms = 120
+
+    def __init__(self):
+        self.calls = 0
+
+    def classify_frame(self, frame):
+        from backend.perception.perceptron_adapter import SemanticBox
+        self.calls += 1
+        return [SemanticBox(mention='miniature hospital with cross', token_type='hospital',
+                            x1=760, y1=380, x2=840, y2=460, source='perceptron')]
+
+
 def test_board_watcher_queries_perceptron_once_per_piece_and_never_for_noise():
     from backend.perception.board_watcher import BoardWatcher
-    from backend.perception.perceptron_adapter import SemanticBox
-
-    class FakePerceptron:
-        available = True
-        last_latency_ms = 120
-
-        def __init__(self):
-            self.calls = 0
-
-        def classify_frame(self, frame):
-            self.calls += 1
-            return [SemanticBox(mention='miniature hospital with cross', token_type='hospital',
-                                x1=760, y1=380, x2=840, y2=460, source='perceptron')]
 
     rng = np.random.default_rng(2)
     empty, homography, quad = synthetic_board()
@@ -257,3 +260,70 @@ def test_board_watcher_queries_perceptron_once_per_piece_and_never_for_noise():
         clock.t += 0.05
         watcher.observe(carpet_noise(placed, quad, rng), i)
     assert fake.calls == 1
+
+
+def test_isolate_yellow_keeps_the_piece_and_dims_everything_else():
+    frame = camera_frame()
+    mask = yellow_mask(frame, load_profile())
+    view = isolate_yellow(frame)
+    assert cv2.countNonZero(mask) > 1000
+    assert np.array_equal(view[mask > 0], frame[mask > 0])
+    rest = view[mask == 0]
+    assert rest.max() <= 64 and (rest[:, 0] == rest[:, 1]).all() and (rest[:, 1] == rest[:, 2]).all()
+
+
+def test_yellow_filter_ignores_non_yellow_changes_and_costs_no_perceptron_call():
+    from backend.perception.board_watcher import BoardWatcher
+    rng = np.random.default_rng(3)
+    empty, homography, quad = synthetic_board()
+    clock = FakeClock()
+    fake = FakePerceptron()
+    watcher = BoardWatcher(fake, stability_frames=10, clock=clock, color_filter=True)
+    watcher.set_board(homography, empty.shape)
+    watcher.capture_reference([carpet_noise(empty, quad, rng) for _ in range(15)])
+    clutter = empty.copy()
+    cv2.rectangle(clutter, (760, 380), (840, 460), (200, 60, 60), -1)  # blue piece: not yellow
+    cv2.rectangle(clutter, (420, 260), (500, 340), (70, 70, 70), -1)  # dark blob: shadow, phone, cable
+    for i in range(30):
+        clock.t += 0.05
+        assert watcher.observe(carpet_noise(clutter, quad, rng), i) == []
+    # Non-yellow objects inside the board are not even tracks, so Perceptron is never asked.
+    assert watcher.tracks == {} and fake.calls == 0
+    assert watcher.changed_fraction > 0.01  # the lighting-change gauge still sees every change
+    assert watcher.color_fraction < 0.001  # nothing yellow on the board yet
+    scene = paste_bridge(clutter, 600, 330)
+    ready = []
+    for i in range(30, 60):
+        clock.t += 0.05
+        ready = watcher.observe(carpet_noise(scene, quad, rng), i)
+    # The yellow bridge passes the filter and is classified once (Perceptron sees nothing there,
+    # so the bridge rule stands); the clutter still costs nothing.
+    assert [t.token_type for t in watcher.tracks.values()] == ['bridge']
+    assert len(ready) == 1 and ready[0].class_source == 'local_cv'
+    assert fake.calls == 1 and 0 < watcher.color_fraction < 0.1
+    # Filter off (operator pressed Y): the same scene now yields three tracks and another call.
+    watcher.color_filter = False
+    for i in range(60, 90):
+        clock.t += 0.05
+        watcher.observe(carpet_noise(scene, quad, rng), i)
+    assert len(watcher.tracks) == 3 and fake.calls == 2
+    assert 'hospital' in [t.token_type for t in watcher.tracks.values()]
+    assert watcher.color_mask is None and watcher.color_fraction == 0.0
+
+
+def test_yellow_filter_still_finds_the_bridge_under_exposure_drift(monkeypatch):
+    from backend.perception.board_watcher import BoardWatcher
+    monkeypatch.delenv('PERCEPTRON_API_KEY', raising=False)
+    rng = np.random.default_rng(4)
+    empty, homography, quad = synthetic_board()
+    watcher = BoardWatcher(PerceptronAdapter(mock_mode=False), stability_frames=20, clock=FakeClock(),
+                           color_filter=True)
+    watcher.set_board(homography, empty.shape)
+    watcher.capture_reference([carpet_noise(empty, quad, rng) for _ in range(15)])
+    ready = []
+    for i in range(40):
+        frame = cv2.convertScaleAbs(paste_bridge(carpet_noise(empty, quad, rng), 600, 330), alpha=0.85)
+        ready = watcher.observe(frame, i)
+    assert len(ready) == 1 and ready[0].token_type == 'bridge'
+    view = watcher.draw(frame, 'status', isolate=True)
+    assert view.shape == frame.shape

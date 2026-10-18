@@ -11,6 +11,10 @@ reference, and treat only what appears *inside the board* afterwards as a candid
   in area so sensor noise (too small) and hands (too large) are ignored.
 - Each track is classified at most once: by the bridge rule, or by one Perceptron call
   per track when Perceptron is configured. No background subtraction, no per-frame API calls.
+- Optional colour filter (color_filter=True): change candidates must also fall inside the
+  yellow mask of the printed pieces (bridge_profile.json), so shadows, hands, cables and the
+  projector's own overlay never become tracks or cost a Perceptron call. While it is on, a
+  piece printed in another colour is invisible to the watcher - toggle it off for those.
 """
 from __future__ import annotations
 from dataclasses import dataclass, field
@@ -23,7 +27,12 @@ try:
 except ImportError:  # pragma: no cover
     cv2 = None
 
-from backend.perception.bridge_detector import detect_bridges
+from backend.perception.bridge_detector import (
+    detect_bridges,
+    isolate_yellow,
+    load_profile,
+    yellow_mask,
+)
 
 UNIT_SQUARE = np.array([[0, 0], [1, 0], [1, 1], [0, 1]], dtype=np.float32)
 
@@ -54,10 +63,14 @@ class BoardWatcher:
     def __init__(self, classifier=None, *, stability_frames: int = 20, match_px: float = 40,
                  move_px: float = 8, grace_frames: int = 15, min_area_fraction: float = 0.002,
                  max_area_fraction: float = 0.06, diff_threshold: int = 35, cooldown_s: float = 2.0,
-                 clock=time.monotonic):
+                 color_filter: bool = False, profile: dict | None = None, clock=time.monotonic):
         if cv2 is None:
             raise ImportError('opencv-contrib-python required')
         self.classifier = classifier
+        self.color_filter = color_filter  # may be toggled at runtime (live demo: Y key)
+        self.profile = profile or load_profile()
+        self.color_mask: np.ndarray | None = None  # yellow pixels of the current frame, when filtering
+        self.color_fraction = 0.0  # fraction of the board that is yellow (HUD / status)
         self.stability_frames = stability_frames
         self.match_px = match_px
         self.move_px = move_px
@@ -134,7 +147,10 @@ class BoardWatcher:
         kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
         changed = cv2.morphologyEx(changed, cv2.MORPH_OPEN, kernel)
         changed = cv2.morphologyEx(changed, cv2.MORPH_CLOSE, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (9, 9)))
+        # Measured before the colour gate so a lighting change still shows as "whole board changed".
         self.changed_fraction = cv2.countNonZero(changed) / max(self._board_area, 1.0)
+        if self.color_filter and self.color_mask is not None:
+            changed = cv2.bitwise_and(changed, self.color_mask)
         contours, _ = cv2.findContours(changed, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         out = []
         for contour in contours:
@@ -158,6 +174,7 @@ class BoardWatcher:
         """Process one frame; returns tracks that are identified, stable and not yet sent."""
         if self._mask is None:
             self.set_board(None, frame.shape)
+        self._update_color_mask(frame)
         candidates = self._bridge_candidates(frame)
         for blob in self._change_candidates(frame):
             # A change blob under a bridge detection is the same object.
@@ -208,6 +225,17 @@ class BoardWatcher:
         return [t for t in self.tracks.values()
                 if t.identified and t.stable_frames >= self.stability_frames and not t.sent]
 
+    def _update_color_mask(self, frame: np.ndarray) -> None:
+        """Yellow mask of this frame, restricted to the board; None when the filter is off."""
+        if not self.color_filter:
+            self.color_mask, self.color_fraction = None, 0.0
+            return
+        mask = yellow_mask(frame, self.profile)
+        if self._mask is not None:
+            mask = cv2.bitwise_and(mask, self._mask)
+        self.color_mask = mask
+        self.color_fraction = cv2.countNonZero(mask) / max(self._board_area, 1.0)
+
     def _classify_stable(self) -> None:
         """One classifier call covers every stable, unqueried track in the frame."""
         pending = [t for t in self.tracks.values()
@@ -251,8 +279,13 @@ class BoardWatcher:
             self.tracks[track_id].note = note
 
     # ------------------------------------------------------------------- draw
-    def draw(self, frame: np.ndarray, status: str = '') -> np.ndarray:
-        out = frame.copy()
+    def draw(self, frame: np.ndarray, status: str = '', isolate: bool = False) -> np.ndarray:
+        """Debug view. isolate=True shows the colour-filtered feed: only yellow keeps its colour."""
+        if isolate:
+            mask = self.color_mask if self.color_filter and self.color_mask is not None else None
+            out = isolate_yellow(frame, self.profile, mask)
+        else:
+            out = frame.copy()
         if self.quad_px is not None:
             cv2.polylines(out, [self.quad_px.astype(np.int32)], True, (255, 200, 0), 2)
         for t in self.tracks.values():

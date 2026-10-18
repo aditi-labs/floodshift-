@@ -77,6 +77,23 @@ def yellow_mask(frame_bgr: np.ndarray, profile: dict) -> np.ndarray:
     return mask
 
 
+def isolate_yellow(frame_bgr: np.ndarray, profile: dict | None = None,
+                   mask: np.ndarray | None = None, dim: float = 0.25) -> np.ndarray:
+    """Operator view of the colour filter: yellow pixels unchanged, everything else grey and dimmed.
+
+    Pass the mask when it has already been computed for this frame (BoardWatcher does).
+    """
+    if cv2 is None:
+        raise ImportError('opencv-contrib-python required')
+    if mask is None:
+        mask = yellow_mask(frame_bgr, profile or load_profile())
+    grey = cv2.cvtColor(cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY), cv2.COLOR_GRAY2BGR)
+    out = (grey * dim).astype(np.uint8)
+    keep = mask > 0
+    out[keep] = frame_bgr[keep]
+    return out
+
+
 def _upright_crop(gray: np.ndarray, rect) -> np.ndarray:
     """Rotate the min-area rectangle so the long axis is vertical; returns the deck crop."""
     (cx, cy), (w, h), angle = rect

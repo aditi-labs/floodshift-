@@ -89,6 +89,10 @@ serializes commits with a lock, but gateway broadcast ordering is P3's responsib
   after ArUco calibration it captures a reference of the empty board; candidates are
   bridge-rule hits inside the board quad plus area-bounded change against the reference.
   Each piece is classified once. Press R after a lighting change, C to recalibrate.
+- Colour filter (default on, `COLOR_FILTER=off` in `.env` disables): change candidates must lie
+  inside the yellow mask from `bridge_profile.json`, so shadows, hands and the projected overlay
+  never become tracks or Perceptron calls. Pieces printed in another colour are ignored while it is
+  on. Y toggles it live, V shows the filtered feed (non-yellow dimmed) in the debug window.
 - Printed-bridge recognition: `scripts/run_live_demo.py` uses
   `PerceptronAdapter.classify_frame`, which calls Perceptron when `PERCEPTRON_API_KEY` and
   the `perceptron` SDK exist, cross-checks bridge boxes with

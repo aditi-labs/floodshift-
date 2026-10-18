@@ -57,6 +57,9 @@ STABILITY_FRAMES = 20  # Frames a piece must sit still before it is classified/s
 PERCEPTRON_COOLDOWN = 2.0  # Seconds between Perceptron calls (one call covers all pending pieces)
 REFERENCE_FRAMES = 15  # frames of the empty board averaged into the change reference
 STATUS_SECONDS = 4  # how long a rejection reason stays on the HUD
+# Colour filter: only yellow objects inside the board become candidates (fewer false positives,
+# fewer Perceptron calls). COLOR_FILTER=off in .env disables it; the Y key toggles it live.
+COLOR_FILTER = os.environ.get("COLOR_FILTER", "yellow").strip().lower() not in ("off", "0", "false", "none", "")
 
 # =============================================================================
 # CALIBRATION
@@ -266,10 +269,18 @@ async def main():
         "calibration": "calibrated" if homography is not None else "uncalibrated",
         "perceptron": "ready" if CLASSIFIER.available else (CLASSIFIER.unavailable_reason or "not_connected"),
         "classifier": "perceptron" if CLASSIFIER.available else "local_cv_bridge_only",
+        "color_filter": "yellow" if COLOR_FILTER else "off",
         "mode": "live"
     })
 
-    watcher = BoardWatcher(CLASSIFIER, stability_frames=STABILITY_FRAMES, cooldown_s=PERCEPTRON_COOLDOWN)
+    watcher = BoardWatcher(CLASSIFIER, stability_frames=STABILITY_FRAMES, cooldown_s=PERCEPTRON_COOLDOWN,
+                           color_filter=COLOR_FILTER)
+    show_isolated = False  # V key: debug window shows the colour-filtered feed
+    if COLOR_FILTER:
+        print("Colour filter: YELLOW - only yellow objects inside the board are candidates."
+              " Pieces printed in another colour are ignored while it is on (press Y to toggle).")
+    else:
+        print("Colour filter: off (COLOR_FILTER=yellow in .env or press Y to enable).")
     ret, frame = cap.read()
     watcher.set_board(homography, frame.shape if ret else (CAMERA_HEIGHT, CAMERA_WIDTH))
 
@@ -282,7 +293,7 @@ async def main():
             if ok:
                 cv2.putText(f, f"CLEAR THE BOARD - reference in {deadline - time.time():.0f}s", (20, 60),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 200, 255), 2)
-                cv2.imshow("FLOODSHIFT Camera", watcher.draw(f))
+                cv2.imshow("FLOODSHIFT Camera", watcher.draw(f, isolate=show_isolated))
                 cv2.waitKey(1)
         frames = []
         while len(frames) < REFERENCE_FRAMES:
@@ -302,7 +313,7 @@ async def main():
     print("LIVE DETECTION RUNNING")
     print("="*50)
     print("Place pieces inside the board - only the board area is watched.")
-    print("Keys: Q quit | R re-capture empty-board reference | C re-calibrate")
+    print("Keys: Q quit | R re-capture empty-board reference | C re-calibrate | Y yellow filter on/off | V filtered view")
     if homography is None:
         print("WARNING: not calibrated - placements cannot be matched to pads until the 4 ArUco corners are found.")
     print("="*50 + "\n")
@@ -338,15 +349,19 @@ async def main():
                 "objects_tracked": len(watcher.tracks),
                 "last_detection": time.strftime("%H:%M:%S"),
                 "changed_board_fraction": round(watcher.changed_fraction, 3),
+                "color_filter": "yellow" if watcher.color_filter else "off",
+                "yellow_board_fraction": round(watcher.color_fraction, 3),
             })
             if watcher.changed_fraction > 0.4:
                 print("Most of the board differs from the reference (lighting changed?). Press R to re-capture.")
 
-        status = f"World v{world_version} | tracks {len(watcher.tracks)} | {'calibrated' if watcher.calibrated else 'NOT CALIBRATED'}"
-        debug_frame = watcher.draw(frame, status)
+        status = (f"World v{world_version} | tracks {len(watcher.tracks)} | "
+                  f"{'calibrated' if watcher.calibrated else 'NOT CALIBRATED'} | "
+                  f"filter {'YELLOW' if watcher.color_filter else 'off'}")
+        debug_frame = watcher.draw(frame, status, isolate=show_isolated)
         if time.time() < hud_until:
             cv2.putText(debug_frame, hud_message, (20, 65), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 200, 255), 2)
-        cv2.putText(debug_frame, "Q quit | R reference | C calibrate",
+        cv2.putText(debug_frame, "Q quit | R reference | C calibrate | Y yellow filter | V filtered view",
                     (20, frame.shape[0] - 20), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200, 200, 200), 1)
         cv2.imshow("FLOODSHIFT Camera", debug_frame)
 
@@ -355,6 +370,14 @@ async def main():
             break
         if key == ord('r'):
             capture_reference()
+        if key == ord('y'):
+            watcher.color_filter = not watcher.color_filter
+            state = "YELLOW" if watcher.color_filter else "OFF"
+            hud_message, hud_until = f"COLOUR FILTER {state}", time.time() + STATUS_SECONDS
+            print(f"Colour filter {state.lower()}.")
+            await update_perception_status({"color_filter": "yellow" if watcher.color_filter else "off"})
+        if key == ord('v'):
+            show_isolated = not show_isolated
         if key == ord('c'):
             homography = calibrate_camera(cap)
             watcher.set_board(homography, frame.shape)
