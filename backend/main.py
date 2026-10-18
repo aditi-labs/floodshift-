@@ -65,12 +65,23 @@ else:
 # WebSocket clients for broadcasting
 ws_clients: set[WebSocket] = set()
 ws_seq: int = 0
+ws_seq_lock = asyncio.Lock()  # Protect sequence number
 
 # World service (P4's real implementation or mock)
 world_service: WorldService | None = None
 
 # Lock for world mutations
 world_lock = asyncio.Lock()
+
+# Perception pipeline status (updated by run_live_demo.py)
+perception_status = {
+    "camera": "not_connected",
+    "perceptron": "not_connected",
+    "calibration": "not_calibrated",
+    "mode": "manual",
+    "last_detection": None,
+    "objects_tracked": 0
+}
 
 
 # =============================================================================
@@ -200,11 +211,14 @@ async def broadcast_snapshot():
         return
 
     snapshot = _snapshot_model()
-    ws_seq += 1
+
+    async with ws_seq_lock:
+        ws_seq += 1
+        seq = ws_seq
 
     event = WSEvent(
         type="world.snapshot",
-        seq=ws_seq,
+        seq=seq,
         sent_at=datetime.utcnow(),
         payload=snapshot.model_dump()
     )
@@ -223,11 +237,14 @@ async def broadcast_snapshot():
 async def broadcast_event(event_type: str, payload: dict):
     """Broadcast arbitrary event to all clients."""
     global ws_seq
-    ws_seq += 1
+
+    async with ws_seq_lock:
+        ws_seq += 1
+        seq = ws_seq
 
     event = WSEvent(
         type=event_type,  # type: ignore
-        seq=ws_seq,
+        seq=seq,
         sent_at=datetime.utcnow(),
         payload=payload
     )
@@ -311,7 +328,10 @@ async def post_action(action: WorldAction):
 
     # Broadcast updated state if action was accepted
     if result.accepted:
-        await broadcast_snapshot()
+        try:
+            await broadcast_snapshot()
+        except Exception as e:
+            print(f"Warning: Failed to broadcast snapshot: {e}")
 
     return result
 
@@ -453,10 +473,12 @@ async def websocket_endpoint(ws: WebSocket):
     try:
         # Send initial hello
         global ws_seq
-        ws_seq += 1
+        async with ws_seq_lock:
+            ws_seq += 1
+            hello_seq = ws_seq
         hello = WSEvent(
             type="server.hello",
-            seq=ws_seq,
+            seq=hello_seq,
             sent_at=datetime.utcnow(),
             payload={"status": "connected", "clients": len(ws_clients)}
         )
@@ -465,10 +487,12 @@ async def websocket_endpoint(ws: WebSocket):
         # Send current state
         if world_service:
             snapshot = _snapshot_model()
-            ws_seq += 1
+            async with ws_seq_lock:
+                ws_seq += 1
+                snap_seq = ws_seq
             event = WSEvent(
                 type="world.snapshot",
-                seq=ws_seq,
+                seq=snap_seq,
                 sent_at=datetime.utcnow(),
                 payload=snapshot.model_dump()
             )
@@ -505,14 +529,17 @@ async def trigger_scan():
 
 
 @app.get("/perception/status")
-async def perception_status():
+async def get_perception_status():
     """Get current perception system status."""
-    return {
-        "camera": "not_connected",
-        "perceptron": "not_connected",
-        "calibration": "not_calibrated",
-        "mode": "mock"
-    }
+    return perception_status
+
+
+@app.post("/perception/status")
+async def update_perception_status(status: dict):
+    """Update perception status (called by run_live_demo.py)."""
+    global perception_status
+    perception_status.update(status)
+    return {"updated": True, "status": perception_status}
 
 
 # =============================================================================

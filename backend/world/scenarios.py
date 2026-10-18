@@ -6,12 +6,38 @@ from pathlib import Path
 DEFAULT_BUNDLE = Path(__file__).resolve().parents[2] / 'scenarios' / 'nepal_rasuwa_v1'
 
 
+class BundleLoadError(Exception):
+    """Error loading scenario bundle."""
+    pass
+
+
 def load_bundle(path=None):
     root = Path(path) if path else DEFAULT_BUNDLE
+    if not root.exists():
+        raise BundleLoadError(f"Scenario directory not found: {root}")
+
     data = root / 'data' if (root / 'data').is_dir() else root
-    bundle = json.loads((data / 'scenario.json').read_text())
+
+    # Load main scenario file
+    scenario_file = data / 'scenario.json'
+    if not scenario_file.exists():
+        raise BundleLoadError(f"scenario.json not found in {data}")
+
+    try:
+        bundle = json.loads(scenario_file.read_text())
+    except json.JSONDecodeError as e:
+        raise BundleLoadError(f"Invalid JSON in scenario.json: {e}")
+
+    # Load required component files
     for key in ('roads', 'sites', 'hazard', 'source_manifest'):
-        bundle[key] = json.loads((data / (key + '.json')).read_text())
+        component_file = data / (key + '.json')
+        if not component_file.exists():
+            raise BundleLoadError(f"{key}.json not found in {data}")
+        try:
+            bundle[key] = json.loads(component_file.read_text())
+        except json.JSONDecodeError as e:
+            raise BundleLoadError(f"Invalid JSON in {key}.json: {e}")
+
     validate_bundle(bundle)
     return bundle
 

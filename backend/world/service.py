@@ -212,6 +212,7 @@ class WorldService:
                     require(isinstance(name, str) and name in self._saved, 'unknown_branch')
                     next_state = deepcopy(self._saved[name])
                     next_state['branch_id'] = name
+                    next_state['ghost_goal'] = None  # Clear ghost on branch load
                     next_state['narration_event'] = {'event_type': 'branch_loaded', 'model_only': True}
                 elif kind == 'branch':
                     name = action.get('branch_id')

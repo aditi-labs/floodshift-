@@ -36,6 +36,7 @@ def reduce_action(bundle, original, action):
         return initial_state(bundle, state['branch_id'])
     if kind == 'advance_stage':
         require(state['phase'] == 'disaster_active', 'start_first')
+        require('hazard' in bundle and 'stages' in bundle['hazard'], 'no_hazard_data')
         stage = state['simulation_stage'] + 1
         require(stage < len(bundle['hazard']['stages']), 'last_stage')
         state['simulation_stage'] = stage
