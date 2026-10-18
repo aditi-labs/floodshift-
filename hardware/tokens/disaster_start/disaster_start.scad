@@ -1,9 +1,9 @@
-// FLOODSHIFT disaster START | 50 x 50 x 13 mm max
-// Octagonal base, four raised alert rays, and a flat centered 30 x 30 mm ArUco pad.
+// Tagless START warning token: 50 x 50 x 13 mm limit.
 $fn=48;
-union(){
+union() {
   cylinder(d=50,h=4,$fn=8);
-  linear_extrude(4) square([30,30],center=true);
-  // Cardinal alert rays are outside the ArUco square and rise to 13 mm overall.
-  for(a=[0,90,180,270]) rotate([0,0,a]) translate([0,21,8.5]) cube([4,7,9],center=true);
+  // Raised warning triangle, lightning bolt, and four alert rays.
+  translate([0,0,2]) linear_extrude(5) polygon([[-17,-13],[17,-13],[0,17]]);
+  translate([0,0,6]) linear_extrude(7) polygon([[1,12],[-7,-1],[-1,-1],[-4,-10],[7,3],[1,3]]);
+  for(a=[0,90,180,270]) rotate([0,0,a]) translate([-2,20,2]) cube([4,4,7]);
 }

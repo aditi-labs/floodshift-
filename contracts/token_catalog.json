@@ -4,7 +4,7 @@
     "hospital": {
       "display_name": "Hospital / Field Care",
       "icon": "medical-cross",
-      "perceptron_hint": "top view of a cross-shaped base with a flat central square pad and a raised medical plus sign on one outer arm",
+      "perceptron_hint": "top view of a cross-shaped base and low central building with a large raised medical plus sign covering the roof",
       "valid_site_kinds": [
         "medical_site"
       ],
@@ -13,7 +13,7 @@
     "shelter": {
       "display_name": "Emergency Shelter",
       "icon": "tent",
-      "perceptron_hint": "top view of a house-shaped pentagonal base with a pointed end, a flat central square pad, and two raised parallel ridge bars near the pointed end",
+      "perceptron_hint": "top view of a house-shaped pentagonal base with a solid steep pitched tent roof, a long central ridge, and a broad entrance step",
       "valid_site_kinds": [
         "shelter_site"
       ],
@@ -22,7 +22,7 @@
     "food_shelter": {
       "display_name": "Food & Water Station",
       "icon": "bowl",
-      "perceptron_hint": "top view of a chamfered rectangular base with a flat central square pad, four round corner posts, and a small raised hollow bowl ring along one edge",
+      "perceptron_hint": "top view of a chamfered rectangular base with four round corner posts, a large bowl rim on the left, and a smaller cup with a loop handle on the right",
       "valid_site_kinds": [
         "food_site"
       ],
@@ -31,7 +31,7 @@
     "bridge": {
       "display_name": "Temporary Bridge",
       "icon": "bridge",
-      "perceptron_hint": "top view of a long narrow bridge deck with flared approach tabs near both ends, a flat central square pad, and four raised rectangular rail posts near the ends",
+      "perceptron_hint": "top view of a long narrow bridge deck with four flared approach tabs, two continuous parallel raised rails, and seven transverse deck slats",
       "valid_site_kinds": [
         "bridge_crossing"
       ],
@@ -40,7 +40,7 @@
     "disaster_start": {
       "display_name": "START DISASTER",
       "icon": "storm",
-      "perceptron_hint": "top view of an octagonal base with a flat central square pad and four raised rectangular alert rays at the top, bottom, left, and right edges",
+      "perceptron_hint": "top view of an octagonal base with a large raised warning triangle, a central lightning bolt, and four short rectangular alert rays at the cardinal edges",
       "valid_site_kinds": [
         "control_start_pad"
       ],
@@ -49,7 +49,7 @@
     "person": {
       "display_name": "People / Household",
       "icon": "person",
-      "perceptron_hint": "top view of a flat square central pad framed by a round head above, two angled rectangular arms at the sides, and two separated rectangular legs below",
+      "perceptron_hint": "top view of one continuous chunky human silhouette with a round head joined by a broad neck to the torso, two outstretched rounded arms, and two splayed rounded legs",
       "valid_site_kinds": [
         "population_node"
       ],
