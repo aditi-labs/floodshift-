@@ -22,7 +22,8 @@ def download(output):
                 with rasterio.open(output/name,'w',**profile) as dst:dst.write(values,1)
     for name in ('README.txt','copyright.txt'):
         with urllib.request.urlopen(BASE+name,timeout=30) as response:
-            (output/name).write_bytes(response.read())
+            text=response.read().decode('utf-8')
+            (output/name).write_text('\n'.join(line.rstrip() for line in text.splitlines()).rstrip()+'\n')
 
 
 if __name__=='__main__':
