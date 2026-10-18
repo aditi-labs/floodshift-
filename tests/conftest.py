@@ -1,8 +1,11 @@
 """
 Test Configuration
-Sets up mock mode for API tests.
+
+API tests run against the real WorldService (the scripted mock world was removed).
+Pin the bundle so a developer's FLOODSHIFT_SCENARIO cannot change expectations.
 """
 import os
 
-# Force mock mode for all tests - this must happen before any imports
-os.environ["FLOODSHIFT_USE_MOCK"] = "true"
+os.environ.pop("FLOODSHIFT_USE_MOCK", None)
+os.environ["FLOODSHIFT_SCENARIO"] = "nepal_rasuwa_hot_v1"
+os.environ.pop("FLOODSHIFT_SESSION", None)

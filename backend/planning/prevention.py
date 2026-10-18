@@ -38,7 +38,7 @@ def _load_data(bundle: dict | Path | None = None) -> tuple[dict, dict]:
     key = str(root)
     if key not in _cache:
         files = [root / 'data' / name for name in ('terrain.json', 'risk.json')]
-        _cache[key] = tuple(json.loads(f.read_text()) if f.exists() else {} for f in files)
+        _cache[key] = tuple(json.loads(f.read_text(encoding="utf-8")) if f.exists() else {} for f in files)
     return _cache[key]
 
 

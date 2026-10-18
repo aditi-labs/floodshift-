@@ -64,9 +64,11 @@ def measure(bundle, state):
             if candidates:
                 metrics['people_reachable_for_' + access] += person['people_model']
                 _, _, nearest, result = min(candidates)
+                # Geometry is expanded from the same edges, so drawings never shortcut.
                 service_routes.append({'population_id': person['id'], 'service': need,
                     'facility_id': nearest['id'], 'reachable': True,
-                    'edge_ids': route_edge_ids(edges, result['path'])})
+                    'edge_ids': route_edge_ids(edges, result['path']),
+                    'board_uv': route_geometry(edges, result['path'], nodes)})
             else:
                 # Show where access breaks: the cheapest route if every closure were open.
                 blocked_options = []
@@ -79,7 +81,8 @@ def measure(bundle, state):
                     _, facility_id, result = min(blocked_options)
                     service_routes.append({'population_id': person['id'], 'service': need,
                         'facility_id': facility_id, 'reachable': False,
-                        'edge_ids': route_edge_ids(open_edges, result['path'])})
+                        'edge_ids': route_edge_ids(open_edges, result['path']),
+                        'board_uv': route_geometry(open_edges, result['path'], nodes)})
             for _, _, facility, result in sorted(candidates):
                 amount = min(remaining, facility['capacity_model'] - facility['used_capacity_model'])
                 if amount <= 0:

@@ -42,7 +42,7 @@ def load_profile(path: Path | str = PROFILE_PATH) -> dict:
     profile = dict(DEFAULT_PROFILE)
     path = Path(path)
     if path.is_file():
-        profile.update(json.loads(path.read_text()))
+        profile.update(json.loads(path.read_text(encoding="utf-8")))
     return profile
 
 
